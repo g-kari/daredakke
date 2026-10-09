@@ -1,0 +1,6 @@
+# Non-secret configuration examples only. Do not put JWTs or API tokens here.
+# Defaults remain blank and deny all requests until Access is approved/configured.
+APP_ORIGIN=""
+ACCESS_TEAM_DOMAIN=""
+ACCESS_AUDIENCE=""
+OWNER_EMAIL=""

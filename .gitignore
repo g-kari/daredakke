@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example
+*.log
+*.tsbuildinfo
+output/
+coverage/
+
+# Generated from wrangler.jsonc; CI and local setup regenerate these.
+worker-configuration.d.ts

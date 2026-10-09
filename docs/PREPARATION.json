@@ -1,0 +1,28 @@
+{
+  "product": "だれだっけ",
+  "prepared_at_utc": "2026-10-09T07:33:00Z",
+  "purpose": "Cloudflare Workers + D1 foundation in g-kari/daredakke; no production deployment",
+  "verification": {
+    "typecheck": "passed",
+    "test_groups": 17,
+    "test_result": "17 passed, 0 failed",
+    "domain_assertion_groups": 9,
+    "local_d1_api": "passed",
+    "local_d1_migration": "passed",
+    "frontend_build": "passed",
+    "worker_bundle_dry_run": "passed",
+    "public_jwks_cache_reuse_outage_rotation_expiry_issuer_isolation_lru": "passed with ephemeral keys and mocked endpoint",
+    "production_deploy_guard": "blocked as intended",
+    "browser_mobile_keyboard_webmcp": "not verified",
+    "production_access_e2e": "not configured or tested"
+  },
+  "safety": {
+    "existing_private_site_unchanged": true,
+    "production_friend_data_read_or_migrated": false,
+    "new_repository_created": false,
+    "cloudflare_resources_created": false,
+    "cloudflare_access_configured": false,
+    "production_deployed": false,
+    "credentials_included": false
+  }
+}
