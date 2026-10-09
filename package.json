@@ -15,6 +15,7 @@
     "types": "wrangler types",
     "db:local": "wrangler d1 migrations apply DB --local",
     "dry-run": "npm run build && wrangler deploy --dry-run",
+    "bundle:worker": "npm run build && node scripts/generate-static-assets.mjs && wrangler deploy --config wrangler.bundled.jsonc --dry-run --outdir dist-worker-bundled",
     "deploy": "node scripts/deny-unapproved-deploy.mjs"
   },
   "dependencies": {

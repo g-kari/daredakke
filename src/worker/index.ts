@@ -2,8 +2,9 @@ import { readAuthConfig } from './config.ts';
 import { authenticateOwner } from './auth.ts';
 import { handleRecords } from './records-api.ts';
 import { json } from './http.ts';
+export type ApplicationEnv = Omit<Env, 'ASSETS'> & { ASSETS: { fetch(request: Request): Promise<Response> } };
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: ApplicationEnv): Promise<Response> {
     try {
       const config = readAuthConfig(env);
       if (!config) return json({ error: '本人専用の認証設定が未完了です。', code: 'auth_not_configured' }, 503);

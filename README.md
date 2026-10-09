@@ -54,6 +54,8 @@ WorkerはCf-Access-Jwt-AssertionのRS256署名・issuer・audience・期限・no
 
 ## 本番へ進める前
 
+画面の配布には2通りあります。通常のwrangler.jsoncはCloudflare Static Assets用です。API経由でupload-sessionの認証を扱えない接続では、npm run bundle:workerで画面を同じWorkerのbundleに含められます。どちらも元の認証入口を先に通り、別の公開Workerや資格情報は不要です。bundle方式は合計1MB・100個までのUTF-8ファイルに限定します。通常のStatic Assetsとは異なり、静的応答にもWorkerの利用量がかかります。
+
 docs/DEPLOYMENT.mdのチェックリストに従ってください。ソースはユーザーが用意した [g-kari/daredakke](https://github.com/g-kari/daredakke) で管理します。CIは型検証・テスト・ローカルD1・配備しないdry-runだけを実行し、Cloudflareへ配備しません。
 
 D1のdatabase_idはローカル用の置換必須値です。承認後に対象アカウント、データベース、本人専用ドメイン、Accessアプリを確認し、実際の値へ置き換えます。設定後はnpm run typesをやり直します。
