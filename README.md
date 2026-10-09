@@ -48,6 +48,10 @@ WorkerはCf-Access-Jwt-AssertionのRS256署名・issuer・audience・期限・no
 
 静的ファイルを含む全リクエストが認証Workerを先に通ります。workers.devとpreview URLは無効です。実際のAccessアプリ、許可ポリシー、ホスト保護の作成・変更には事前承認が必要です。
 
+保存先は署名検証後のissuerとsubから作るユーザー別namespaceです。デモ、マイレコード、復元履歴もその中で分離します。保存時は読み込み時のnamespaceと現在のログインの一致を確認し、切り替わっていたら古い入力を保存せず画面から消します。URLやJSONのowner指定は保存先を変更できません。
+
+これは将来の複数ユーザーに備えた分離の土台です。今のWorkerの許可メールはOWNER_EMAIL 1件のままで、他ユーザーのログイン、一般公開、共有、登録画面は有効にしていません。詳しくは [認証とユーザー分離](docs/AUTHENTICATION.md) を参照してください。
+
 ## 本番へ進める前
 
 docs/DEPLOYMENT.mdのチェックリストに従ってください。ソースはユーザーが用意した [g-kari/daredakke](https://github.com/g-kari/daredakke) で管理します。CIは型検証・テスト・ローカルD1・配備しないdry-runだけを実行し、Cloudflareへ配備しません。

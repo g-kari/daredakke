@@ -11,7 +11,7 @@ export async function handleRecords(request: Request, db: D1Database, owner: Own
       await db.prepare('INSERT OR IGNORE INTO record_documents (owner_id, scope, document, revision, updated_at) VALUES (?, ?, ?, 0, ?)').bind(owner.ownerId, scope, JSON.stringify(initial), new Date().toISOString()).run();
       const row = await db.prepare('SELECT document, revision FROM record_documents WHERE owner_id = ? AND scope = ?').bind(owner.ownerId, scope).first<{ document: string; revision: number }>();
       if (!row) throw new Error('missing_document');
-      return json({ state: validateState(JSON.parse(row.document)), revision: row.revision });
+      return json({ state: validateState(JSON.parse(row.document)), revision: row.revision, namespace: owner.ownerId });
     } catch { console.error(JSON.stringify({ event: 'record_read_failed' })); return json({ error: '保存データを読み込めませんでした。再読み込みしてください。' }, 503); }
   }
   if (request.method !== 'POST') return json({ error: 'この操作には対応していません。' }, 405);
@@ -21,6 +21,9 @@ export async function handleRecords(request: Request, db: D1Database, owner: Own
     const raw = await readLimitedJson(request);
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new HttpError('保存情報を確認してください。', 400);
     payload = raw as Record<string, unknown>;
+    if (typeof payload.expectedNamespace !== 'string' || !/^u_[a-f0-9]{64}$/.test(payload.expectedNamespace)) throw new HttpError('ログイン情報を確認して再読み込みしてください。', 400);
+    // A client namespace is a consistency check only, never a routing or authorization source.
+    if (payload.expectedNamespace !== owner.ownerId) return json({ error: 'ログインしたユーザーが変わりました。古い入力を保存せず、再読み込みしてください。', code: 'identity_changed' }, 409);
     if ((payload.scope !== 'demo' && payload.scope !== 'personal') || typeof payload.revision !== 'number' || !Number.isSafeInteger(payload.revision) || payload.revision < 0) throw new HttpError('保存情報を確認してください。', 400);
     state = validateState(payload.state);
     if (new TextEncoder().encode(JSON.stringify(state)).byteLength > 850000) throw new HttpError('履歴を含む保存容量の上限です。', 413);

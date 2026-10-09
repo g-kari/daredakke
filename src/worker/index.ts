@@ -11,6 +11,7 @@ export default {
       const owner = await authenticateOwner(request, config);
       if (!owner) return json({ error: '所有者のCloudflare Accessログインが必要です。' }, 401);
       const path = new URL(request.url).pathname;
+      if (path === '/api/session') return request.method === 'GET' ? json({ namespace: owner.ownerId }) : json({ error: 'この操作には対応していません。' }, 405);
       if (path === '/api/records') return await handleRecords(request, env.DB, owner, config);
       if (path.startsWith('/api/')) return json({ error: '見つかりません。' }, 404);
       if (request.method !== 'GET' && request.method !== 'HEAD') return json({ error: 'この操作には対応していません。' }, 405);

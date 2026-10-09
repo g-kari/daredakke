@@ -4,12 +4,12 @@ import fs from 'node:fs';
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
 import { handleRecords } from '../src/worker/records-api.ts';
 import { change, mergePeople, undoChange, demoData, empty, exportData, parseImport } from '../src/domain/records.ts';
-const config={origin:'https://daredakke.example.com',issuer:'https://exampleteam.cloudflareaccess.com',audience:'test-audience',ownerEmail:'owner@example.com'},owner={ownerId:'owner',subject:'test-sub'};
+const config={origin:'https://daredakke.example.com',issuer:'https://exampleteam.cloudflareaccess.com',audience:'test-audience',ownerEmail:'owner@example.com'},owner={ownerId:'u_'+'1'.repeat(64),subject:'test-sub'};
 const mf=new Miniflare(convertV4MiniflareOptions({modules:true,script:'export default { fetch(){ return new Response("test only"); } }',compatibilityDate:'2026-10-09',d1Databases:{DB:'local-daredakke-unit-tests'},d1Persist:false}));
 test('records API actual local D1 persistence, revision, recovery, isolation and input guards',async()=>{try{
  const db=await mf.getD1Database('DB');await db.prepare(fs.readFileSync(new URL('../migrations/0001_record_documents.sql',import.meta.url),'utf8').trim()).run();
  const get=scope=>handleRecords(new Request(config.origin+'/api/records?scope='+scope),db,owner,config);
- const post=(s,revision,extra={})=>handleRecords(new Request(config.origin+'/api/records',{method:'POST',headers:{'origin':config.origin,'content-type':'application/json','x-friend-record':'1',...extra},body:JSON.stringify({scope:'demo',revision,state:s})}),db,owner,config);
+ const post=(s,revision,extra={})=>handleRecords(new Request(config.origin+'/api/records',{method:'POST',headers:{'origin':config.origin,'content-type':'application/json','x-friend-record':'1',...extra},body:JSON.stringify({scope:'demo',revision,state:s,expectedNamespace:owner.ownerId})}),db,owner,config);
  let current=await(await get('demo')).json();assert.deepEqual(current.state.data,demoData());assert.deepEqual((await(await get('personal')).json()).state.data,empty());
  assert.equal((await post(current.state,current.revision,{origin:'https://other.example.com'})).status,403);assert.equal((await post(current.state,current.revision,{'x-friend-record':'0'})).status,403);
  const merged=change(current.state,mergePeople(current.state.data,'demo-aoi','demo-ao'),'merge');assert.equal((await post(merged,current.revision)).status,200);assert.equal((await post(current.state,current.revision)).status,409);
