@@ -27,3 +27,4 @@ jobs:
       - run: npm run check
       - run: npm run db:local
       - run: npm run dry-run
+      - run: npm run bundle:worker

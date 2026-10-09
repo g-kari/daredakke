@@ -1,11 +1,11 @@
 {
   "product": "だれだっけ",
-  "prepared_at_utc": "2026-10-09T08:15:00Z",
+  "prepared_at_utc": "2026-10-09T08:37:00Z",
   "purpose": "Cloudflare Workers + D1 foundation in g-kari/daredakke; no production deployment",
   "verification": {
     "typecheck": "passed",
-    "test_groups": 34,
-    "test_result": "34 passed, 0 failed",
+    "test_groups": 49,
+    "test_result": "49 passed, 0 failed",
     "domain_assertion_groups": 9,
     "local_d1_api": "passed",
     "local_d1_migration": "passed",
@@ -16,7 +16,9 @@
     "browser_mobile_keyboard_webmcp": "not verified",
     "production_access_e2e": "not configured or tested",
     "authenticated_user_namespaces_session_write_guard_cross_user_d1": "passed with ephemeral identities and local D1",
-    "actual_component_deferred_file_record_response_overlap_focus_export_callbacks": "passed synthetic callback tests; rendered browser not verified"
+    "actual_component_deferred_file_record_response_overlap_focus_export_callbacks": "passed synthetic callback tests; rendered browser not verified",
+    "single_worker_static_bundle": "4 UTF-8 files, 469246 bytes; Worker dry-run 525.23 KiB",
+    "auth_first_bundled_assets_and_generator": "15 added tests passed"
   },
   "safety": {
     "existing_private_site_unchanged": true,

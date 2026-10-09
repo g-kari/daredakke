@@ -35,6 +35,16 @@ Accessは新たな本人認証・アクセス制御の設定です。既存設�
 
 本番データの移行、削除、バックフィルはこのパッケージの通常配備に含めません。元Sitesは移行確認と明示的な指示があるまで保全します。
 
+## 1 Workerの静的bundle方式
+
+Cloudflare Static AssetsのDirect Uploadはupload-session JWTを使うため、接続がその認証方式を扱えない場合はwrangler.bundled.jsoncを使います。npm run bundle:workerはfrontend build、UTF-8 byte/hash検査、同じWorkerに含めるJSON生成、配備しないWorker dry-runを実行します。生成物は.gitignore対象です。秘密や実データのファイルを読みません。
+
+src/worker/bundled.tsは元のauth-first handlerに静的応答を渡します。認証を迂回する公開経路、追加Worker、外部fetchによるasset proxyはありません。GET/HEAD、固定MIME、未知assetの404、private/no-storeを検証しています。
+
+Cloudflare APIの通常multipart Worker uploadにこのbundleを使い、main_module、DB binding、非秘密の4設定値を指定します。実設定値はCloudflare側に置き、公開リポジトリへ本人メールやアカウント情報を入れません。空Workerをworkers.dev/preview無効で作り、Access本人限定ルールを確認してから承認されたホストを接続します。
+
+bundleは小さなテキスト画面用です。バイナリー画像、合計1MB超または100ファイル超は生成を止めます。その場合は正式なStatic Assets配備経路の確認が必要です。静的ファイルもWorkerを実行するため、利用量と料金は通常のStatic Assets方式と異なります。新プランや資格情報の作成を自動で行いません。
+
 ## ロールバック
 
 配備前のWorkerバージョンとD1バックアップを確認します。Workerの切り戻しとDBの復元は別です。今回の初期SQLは1テーブルを作成するだけで、既存行を消したり変更したりしません。適用済みマイグレーションは書き換えず、将来の変更は追記します。
