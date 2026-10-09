@@ -1,0 +1,13 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "daredakke",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-10-09",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "assets": { "directory": "./dist", "binding": "ASSETS", "run_worker_first": true, "not_found_handling": "single-page-application" },
+  "d1_databases": [{ "binding": "DB", "database_name": "daredakke-local-placeholder", "database_id": "00000000-0000-4000-8000-000000000000", "migrations_dir": "migrations", "remote": false }],
+  "vars": { "APP_ORIGIN": "", "ACCESS_TEAM_DOMAIN": "", "ACCESS_AUDIENCE": "", "OWNER_EMAIL": "" },
+  "observability": { "enabled": true, "head_sampling_rate": 1 }
+}

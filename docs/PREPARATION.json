@@ -1,0 +1,27 @@
+{
+  "product": "だれだっけ",
+  "prepared_at_utc": "2026-10-09T07:08:00Z",
+  "purpose": "Cloudflare Workers + D1 migration preparation; repository destination pending",
+  "verification": {
+    "typecheck": "passed",
+    "test_groups": 14,
+    "test_result": "14 passed, 0 failed",
+    "domain_assertion_groups": 9,
+    "local_d1_api": "passed",
+    "local_d1_migration": "passed",
+    "frontend_build": "passed",
+    "worker_bundle_dry_run": "passed",
+    "production_deploy_guard": "blocked as intended",
+    "browser_mobile_keyboard_webmcp": "not verified",
+    "production_access_e2e": "not configured or tested"
+  },
+  "safety": {
+    "existing_private_site_unchanged": true,
+    "production_friend_data_read_or_migrated": false,
+    "new_repository_created": false,
+    "cloudflare_resources_created": false,
+    "cloudflare_access_configured": false,
+    "production_deployed": false,
+    "credentials_included": false
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "だれだっけ production non-secret configuration",
+  "type": "object",
+  "required": ["APP_ORIGIN", "ACCESS_TEAM_DOMAIN", "ACCESS_AUDIENCE", "OWNER_EMAIL"],
+  "additionalProperties": false,
+  "properties": {
+    "APP_ORIGIN": {"type":"string","format":"uri","pattern":"^https://[^/?#]+/?$","description":"Approved private custom-domain origin. No path, port, credentials, query, or fragment."},
+    "ACCESS_TEAM_DOMAIN": {"type":"string","pattern":"^https://[a-z0-9][a-z0-9-]*\\.cloudflareaccess\\.com/?$","description":"Existing/approved Cloudflare Access team issuer."},
+    "ACCESS_AUDIENCE": {"type":"string","minLength":1,"maxLength":300,"description":"Approved owner-only Access application AUD. Not a credential."},
+    "OWNER_EMAIL": {"type":"string","format":"email","description":"The single verified owner's login email. Not sourced from incoming headers."}
+  }
+}
