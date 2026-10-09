@@ -1,0 +1,37 @@
+# 認証とユーザー分離
+
+## 現在の許可範囲
+
+Cloudflare Accessのapp JWTを検証し、OWNER_EMAILに一致する本人1名だけを許可します。メール判定を削除したり他人を許可する変更は含めていません。
+
+認証成功後、設定済みの検証されたissuerと署名検証済みsubをJSON配列としてSHA-256へ渡し、u_から始まるopaque namespaceを生成します。メールやAUDはnamespaceへ含めません。トークン更新では同じnamespaceになり、別のissuer/subでは別になります。
+
+record_documentsのPRIMARY KEY(owner_id, scope)を使い、全SQLが認証から得たowner_idを条件にします。クライアントのownerId、owner_id、userId、URL指定から保存先を選びません。人・サービスのアカウント・重複候補・復元履歴は各ユーザーの文書内に閉じています。ユーザー間の同一人物の推定や自動共有はしません。
+
+## ログイン切替時の保存
+
+GET /api/recordsはnamespaceを返します。POSTはexpectedNamespaceを必須とし、現在の認証namespaceと違う場合はD1へ触れる前に409 / identity_changedを返します。入力namespaceは整合性検査専用です。そのnamespaceのデータを検索する許可を与えるものではありません。
+
+画面はこの応答、401/403、またはログイン確認の失敗時に記録・履歴・編集入力・読み込みテキスト・選択・ダイアログを消します。再読み込みはユーザーが行い、古い文書を新しいユーザーへ自動再試行しません。
+
+記録を表示する前に認証済みGET /api/sessionでnamespaceの一致を再確認します。フォーカス復帰時と表示復帰時も確認し、確認中は記録や編集画面を表示せず、保存・export・WebMCP読み取りを止めます。新しい確認イベントは古いprobeを失効させ、待機中という理由で省略しません。記録の読込中にイベントが来た場合は古い読込を中止し、明示的な再読み込みを求めます。同じidentityの確認が成功した場合は編集中の入力を保持します。
+
+記録・ファイル・確認の非同期応答にはnamespaceと世代チェックを行います。ログイン消去やscope切替後に古いfile.text()が完了しても、古いJSONやダイアログを再表示しません。同じログインでも新しいファイル選択が古い読み込みを失効させます。
+
+実ブラウザーでのログイン切替・画面操作はまだ未検証です。他ユーザーを実際に許可する前に、その確認と明示的なログアウト手順、AccessとWorkerの許可管理、利用上限を検証します。
+
+## 移行とアカウント復旧
+
+今回の段階では本番D1も実データもありません。テーブル形式、JSON形式、初期SQLを変更せず分離できます。既存の別アプリや元Sitesからデータを取得・移行する処理はありません。
+
+旧コードのliteral ownerキーで本番保存をした後に切り替える場合は、本人確認・バックアップ・移行先に文書がないことを確認してdemo/personal最大2行を一度だけrekeyします。document、revision、updated_at、復元履歴を保全し、自動コピーや自動統合はしません。JSON exportは履歴やrevisionを含まないので、履歴を保つDB移行の代わりにはなりません。
+
+Accessのsubは人に永久に固定されたIDではありません。Zero Trustから削除・再追加したり組織を変えたりすると変わります。復旧は本人確認付きの明示的なidentity mapping/rekeyとし、同じメールという理由だけで旧データを自動取得させません。必要になればidentity対応表を追加できます。
+
+rollback時は、他ユーザーを許可していない状態を先に確認します。複数ユーザーの保存後にliteral owner方式へ切り戻してはいけません。Worker版の切り戻しとD1の復元は別です。
+
+## テスト
+
+合成したA/BのRS256 JWTとローカルD1だけを使い、Aの実行設定ではBのメールを拒否したまま、それぞれの認証namespaceで4文書（A/B × demo/personal）を検証します。別ユーザーへの読取・保存、偽のowner指定、同じrevisionの古いタブ、merge/undo、JSON入出力、余分なフィールドを確認します。実際のAccess許可を増やすテストではありません。
+
+公式仕様: [Cloudflare application token](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/application-token/)

@@ -12,6 +12,7 @@ import { AlertDialog, AlertDialogContent, AlertDialogTitle, AlertDialogDescripti
 import { Skeleton } from '@/components/ui/skeleton';
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
+import { identityChanged, readNamespace, readSessionFile, verifyLoadedNamespace, sessionChecks } from '@/lib/session';
 import { type Person, type Account, type Service, type Data, type RecordState, colors, demoData, empty, normalizeAccount, validateData, change, undoChange, mergePeople, duplicateGroups, parseImport, exportData } from '@/domain/records';
 
 type PersonDraft = { id?: string; name: string; aliases: string; tags: string; notes: string };
@@ -28,6 +29,8 @@ export default function FriendRecord() {
   const [scope, setScope] = useState<'demo' | 'personal'>('demo');
   const [state, setState] = useState<RecordState | null>(null);
   const [revision, setRevision] = useState(0);
+  const [namespace, setNamespace] = useState<string | null>(null);
+  const [checkingSession, setCheckingSession] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [tab, setTab] = useState('people');
@@ -45,6 +48,11 @@ export default function FriendRecord() {
   const [copied, setCopied] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const stateRef = useRef(state); stateRef.current = state;
+  const namespaceRef = useRef<string | null>(null);
+  const identityEpoch = useRef(0);
+  const importReadEpoch = useRef(0);
+  const sessionPending = useRef(false);
+  const recordLoad = useRef<AbortController | null>(null);
   const inputFile = useRef<HTMLInputElement>(null);
   const data = state?.data || empty();
   const person = data.people.find(p => p.id === selected);
@@ -58,14 +66,53 @@ export default function FriendRecord() {
   });
   const accountMatch = (a: Account) => (serviceFilter === 'all' || a.service === serviceFilter) && match([a.label, a.url, a.service, data.people.find(p => p.id === a.personId)?.name || '']);
   const peopleChoices = [{ value: 'none', label: '未整理のまま' }, ...data.people.map(p => ({ value: p.id, label: p.name }))];
+  function clearSessionData(message = '') {
+    identityEpoch.current++;
+    importReadEpoch.current++;
+    sessionPending.current = false; setCheckingSession(false);
+    stateRef.current = null; namespaceRef.current = null;
+    setState(null); setNamespace(null); setRevision(0); setSelected(null);
+    setPersonDraft(null); setAccountDraft(null); setConfirmation(null);
+    setImportText(''); setImportOpen(false); setExportOpen(false); setCopied(false);
+    setQuery(''); setServiceFilter('all'); setMergeTarget('none'); setFormError(''); setError(message);
+    if (inputFile.current) inputFile.current.value = '';
+  }
   useEffect(() => {
-    const ctrl = new AbortController(); setState(null); setError(''); setSelected(null);
+    const ctrl = new AbortController(); clearSessionData();
+    recordLoad.current = ctrl;
+    const epoch = identityEpoch.current;
     fetch('/api/records?scope=' + scope, { signal: ctrl.signal, cache: 'no-store' }).then(async r => {
-      const result = await r.json() as { error?: string; state: RecordState; revision: number }; if (!r.ok) throw new Error(result.error || '読み込めませんでした。');
-      if (!ctrl.signal.aborted) { setState(result.state); setRevision(result.revision); }
-    }).catch(e => { if (!ctrl.signal.aborted) setError(e.message); });
-    return () => ctrl.abort();
+      const result = await r.json() as { error?: string; state: RecordState; revision: number; namespace: string }; if (!r.ok) throw new Error(result.error || '読み込めませんでした。');
+      const received = await verifyLoadedNamespace(result, async () => {
+        const session = await fetch('/api/session', { signal: ctrl.signal, cache: 'no-store' });
+        if (!session.ok) throw new Error('ログインを確認できません。再読み込みしてください。');
+        return session.json();
+      }, () => !ctrl.signal.aborted && epoch === identityEpoch.current);
+      if (received && !ctrl.signal.aborted && epoch === identityEpoch.current) { namespaceRef.current = received; setNamespace(received); setState(result.state); setRevision(result.revision); }
+    }).catch(e => { if (!ctrl.signal.aborted && epoch === identityEpoch.current) setError(e.message); });
+    return () => { ctrl.abort(); if (recordLoad.current === ctrl) recordLoad.current = null; };
   }, [scope, reloadKey]);
+  useEffect(() => {
+    const checks = sessionChecks();
+    const check = async () => {
+      if (document.visibilityState === 'hidden') return;
+      const operation = checks.begin(), expected = namespaceRef.current;
+      if (!expected) { recordLoad.current?.abort(); clearSessionData('読み込み中に表示状態が変わりました。再読み込みしてログインを確認してください。'); }
+      const epoch = identityEpoch.current;
+      sessionPending.current = true; setCheckingSession(true);
+      try {
+        const response = await fetch('/api/session', { cache: 'no-store', signal: operation.signal });
+        const result = await response.json();
+        if (!operation.isCurrent() || epoch !== identityEpoch.current) return;
+        const received = readNamespace(result);
+        if (!response.ok || (expected && received !== expected)) throw new Error('ログインが変わったか期限切れです。古い入力を保存せず、再読み込みしてください。');
+      } catch {
+        if (operation.isCurrent() && expected === namespaceRef.current && epoch === identityEpoch.current) clearSessionData('ログインを確認できません。古い入力を保存せず、再読み込みしてください。');
+      } finally { if (operation.isCurrent() && epoch === identityEpoch.current) { sessionPending.current = false; setCheckingSession(false); } }
+    };
+    window.addEventListener('focus', check); document.addEventListener('visibilitychange', check);
+    return () => { checks.cancel(); window.removeEventListener('focus', check); document.removeEventListener('visibilitychange', check); };
+  }, []);
   useEffect(() => {
     type Context = { registerTool: (tool: Record<string, unknown>, opts: { signal: AbortSignal }) => void | Promise<void> };
     const ctx = (document as Document & { modelContext?: Context }).modelContext;
@@ -73,11 +120,13 @@ export default function FriendRecord() {
     const life = new AbortController();
     const tools = [
       { name: 'search_friend_records', title: '人とアカウントを検索', description: '現在の保存先の人とアカウントを検索し、表示中の検索欄にも反映します。記録は変更しません。', inputSchema: { type: 'object', properties: { query: { type: 'string', maxLength: 100 } }, required: ['query'], additionalProperties: false }, annotations: { readOnlyHint: true, untrustedContentHint: true }, execute: (input: unknown) => {
+        if (sessionPending.current) throw new Error('ログイン確認中です。');
         const i = input as { query?: unknown }; if (!i || typeof i.query !== 'string' || i.query.length > 100 || Object.keys(i).some(k => k !== 'query')) throw new Error('queryは100文字までの文字列です。');
         const q = i.query.toLocaleLowerCase(); setQuery(i.query); setTab('people'); setServiceFilter('all');
         const d = stateRef.current?.data || empty(); return { people: d.people.filter(p => [p.name, ...p.aliases, ...p.tags, p.notes, ...d.accounts.filter(a => a.personId === p.id).flatMap(a => [a.label, a.url])].join(' ').toLocaleLowerCase().includes(q)).map(p => ({ id: p.id, name: p.name, accounts: d.accounts.filter(a => a.personId === p.id) })) };
       } },
       { name: 'start_person_creation', title: '人の追加を開く', description: '人を追加する入力画面を開きます。保存はユーザーが画面で行います。', inputSchema: { type: 'object', properties: {}, additionalProperties: false }, annotations: { readOnlyHint: false, untrustedContentHint: false }, execute: (input: unknown) => {
+        if (sessionPending.current) throw new Error('ログイン確認中です。');
         if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length) throw new Error('入力は空のオブジェクトです。'); setFormError(''); setPersonDraft(blankPerson()); return { opened: 'person_creation' };
       } },
     ];
@@ -85,13 +134,17 @@ export default function FriendRecord() {
     return () => life.abort();
   }, []);
   async function save(next: RecordState, message: string): Promise<boolean> {
-    if (busy || !state) return false;
+    if (busy || sessionPending.current || !state || !namespace || namespace !== namespaceRef.current) return false;
+    const expected = namespace, epoch = identityEpoch.current;
     setBusy(true); setError('');
     try {
-      const response = await fetch('/api/records', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Friend-Record': '1' }, body: JSON.stringify({ scope, revision, state: next }) });
-      const result = await response.json() as { error?: string; revision: number }; if (!response.ok) throw new Error(result.error || '保存できませんでした。');
+      const response = await fetch('/api/records', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Friend-Record': '1' }, body: JSON.stringify({ scope, revision, state: next, expectedNamespace: expected }) });
+      const result = await response.json().catch(() => null) as { error?: string; revision?: number; code?: string } | null;
+      if (epoch !== identityEpoch.current || expected !== namespaceRef.current) return false;
+      if (identityChanged(response.status, result) || !result) { const reason = result?.error || 'ログインを確認できません。再読み込みしてください。'; clearSessionData(reason); toast.error(reason); return false; }
+      if (!response.ok || typeof result.revision !== 'number') throw new Error(result.error || '保存できませんでした。');
       setState(next); setRevision(result.revision); toast.success(message); return true;
-    } catch (e) { const message = e instanceof Error ? e.message : '保存できませんでした。'; setError(message); setFormError(message); toast.error(message); return false; }
+    } catch (e) { if (epoch !== identityEpoch.current || expected !== namespaceRef.current) return false; const message = e instanceof Error ? e.message : '保存できませんでした。'; setError(message); setFormError(message); toast.error(message); return false; }
     finally { setBusy(false); }
   }
   async function update(next: Data, label: string) { if (!state) return false; try { return await save(change(state, next, label), label); } catch (e) { const msg = (e as Error).message; setFormError(msg); toast.error(msg); return false; } }
@@ -119,9 +172,16 @@ export default function FriendRecord() {
   function removePerson(p: Person) { setConfirmation({ title: '人の記録を削除しますか？', message: `「${p.name}」の記録を削除します。アカウントは未整理へ移します。元に戻すこともできます。`, action: '人の記録を削除', run: async () => { if (await update({ people: data.people.filter(c => c.id !== p.id), accounts: data.accounts.map(a => a.personId === p.id ? { ...a, personId: null } : a) }, '人の記録を削除しました')) setSelected(null); } }); }
   function removeAccount(a: Account) { setConfirmation({ title: 'アカウントの登録を削除しますか？', message: `${a.service}「${a.label}」の登録だけを削除します。外部サービスのアカウントには何もしません。元に戻せます。`, action: '登録を削除', run: async () => { await update({ ...data, accounts: data.accounts.filter(c => c.id !== a.id) }, 'アカウントの登録を削除しました'); } }); }
   async function readFile(file?: File) {
-    if (!file) return; if (file.size > 900000) { toast.error('JSONファイルは900KBまでです。'); return; }
-    try { const text = await file.text(); parseImport(text); setImportText(text); setFormError(''); setImportOpen(true); } catch (e) { toast.error((e as Error).message); }
-    if (inputFile.current) inputFile.current.value = '';
+    if (!file || !namespace || namespace !== namespaceRef.current) return;
+    const expected = namespace, epoch = identityEpoch.current, readEpoch = ++importReadEpoch.current;
+    const isCurrent = () => expected === namespaceRef.current && epoch === identityEpoch.current && readEpoch === importReadEpoch.current;
+    if (file.size > 900000) { toast.error('JSONファイルは900KBまでです。'); return; }
+    try {
+      const text = await readSessionFile(file, isCurrent);
+      if (text === null || !isCurrent()) return;
+      parseImport(text); setImportText(text); setFormError(''); setImportOpen(true);
+    } catch (e) { if (isCurrent()) toast.error((e as Error).message); }
+    finally { if (isCurrent() && inputFile.current) inputFile.current.value = ''; }
   }
   function stageImport() {
     try {
@@ -130,12 +190,20 @@ export default function FriendRecord() {
     } catch (e) { setFormError((e as Error).message); }
   }
   function downloadExport() {
+    if (sessionPending.current || !namespace || namespace !== namespaceRef.current) return;
     const blob = new Blob([exportData(data)], { type: 'application/json' }), url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = `daredakke-${scope}-${new Date().toISOString().slice(0, 10)}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); toast.success('JSONを書き出しました');
   }
-  async function copyExport() { try { await navigator.clipboard.writeText(exportData(data)); setCopied(true); toast.success('JSONをコピーしました'); } catch { toast.error('コピーできませんでした。テキストを選択してコピーしてください。'); } }
+  async function copyExport() {
+    if (sessionPending.current || !namespace || namespace !== namespaceRef.current) return;
+    const expected = namespace, epoch = identityEpoch.current;
+    const isCurrent = () => expected === namespaceRef.current && epoch === identityEpoch.current;
+    try { await navigator.clipboard.writeText(exportData(data)); if (isCurrent()) { setCopied(true); toast.success('JSONをコピーしました'); } }
+    catch { if (isCurrent()) toast.error('コピーできませんでした。テキストを選択してコピーしてください。'); }
+  }
   function accountRow(a: Account, controls = true) {
     return <article key={a.id} className="account-row"><div className="account-line"><ServiceMark service={a.service} /><div className="account-title"><strong>{a.label}</strong><span>{a.service}</span></div>{scope === 'personal' && <a className="icon-link" href={a.url} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" aria-label={a.label + 'のプロフィールを開く'}><ExternalLink size={17} /></a>}</div><div className="account-url">{a.url}</div>{controls && <div className="account-controls"><Choice label={a.label + 'の紐づけ先'} value={a.personId || 'none'} onChange={v => void link(a, v)} items={peopleChoices} disabled={busy} /><Button variant="ghost" size="icon" aria-label={a.label + 'を編集'} onClick={() => editAccount(a)} disabled={busy}><Pencil /></Button><Button variant="ghost" size="icon" aria-label={a.label + 'の登録を削除'} onClick={() => removeAccount(a)} disabled={busy}><Trash2 /></Button></div>}</article>;
   }
+  if (checkingSession) return <div className="app-shell"><main className="main"><p role="status">ログインを確認しています…</p></main></div>;
   return <div className="app-shell">
     <Toaster position="bottom-center" richColors />
     <a className="skip-link" href="#main">メインへ移動</a>

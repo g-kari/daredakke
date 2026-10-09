@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
-import { authenticateOwner } from '../src/worker/auth.ts';
+import { authenticateOwner, ownerNamespace } from '../src/worker/auth.ts';
 import { createAccessResolverCache } from '../src/worker/jwks-cache.ts';
 
 async function ephemeralKey(kid) {
@@ -51,7 +51,7 @@ test('same-isolate authentication reuses fresh public keys through outage, rotat
   };
   try {
     for (let i = 0; i < 3; i++) {
-      assert.deepEqual(await authenticateOwner(requestFor(oldToken), config), { ownerId: 'owner', subject: 'synthetic-owner' });
+      assert.deepEqual(await authenticateOwner(requestFor(oldToken), config), { ownerId: await ownerNamespace(config.issuer, 'synthetic-owner'), subject: 'synthetic-owner' });
     }
     assert.equal(fetches, 1, 'one resolver keeps its public-key cache across requests');
     outage = true;

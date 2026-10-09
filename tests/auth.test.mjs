@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPair, exportJWK, createLocalJWKSet, SignJWT } from 'jose';
-import { verifyOwnerToken } from '../src/worker/auth.ts';
+import { verifyOwnerToken, ownerNamespace } from '../src/worker/auth.ts';
 import { readAuthConfig } from '../src/worker/config.ts';
 const config={origin:'https://daredakke.example.com',issuer:'https://exampleteam.cloudflareaccess.com',audience:'test-audience',ownerEmail:'owner@example.com'};
 const { publicKey, privateKey }=await generateKeyPair('RS256');
@@ -9,9 +9,9 @@ const jwk=await exportJWK(publicKey);jwk.kid='ephemeral-test-key';jwk.alg='RS256
 const keys=createLocalJWKSet({keys:[jwk]});
 const now=Math.floor(Date.now()/1000);
 const token=async (overrides={},header={alg:'RS256',kid:jwk.kid})=>new SignJWT({iss:config.issuer,aud:[config.audience],sub:'test-owner-sub',email:config.ownerEmail,type:'app',iat:now,nbf:now-1,exp:now+60,...overrides}).setProtectedHeader(header).sign(privateKey);
-test('Access owner JWT verifies real RS256 signature and returns stable single-owner key',async()=>{assert.deepEqual(await verifyOwnerToken(await token(),config,keys),{ownerId:'owner',subject:'test-owner-sub'})});
+test('Access owner JWT verifies real RS256 signature and returns per-identity namespace while keeping single-owner admission',async()=>{assert.deepEqual(await verifyOwnerToken(await token(),config,keys),{ownerId:await ownerNamespace(config.issuer,'test-owner-sub'),subject:'test-owner-sub'})});
 test('missing JWT and spoofed Sites identity have no authentication meaning',async()=>{assert.equal(await verifyOwnerToken(null,config,keys),null);assert.equal(await verifyOwnerToken('owner@example.com',config,keys),null)});
-test('wrong issuer/audience/owner/subject/token type/time rejected',async()=>{for(const bad of [{iss:'https://evil.cloudflareaccess.com'},{aud:['other-audience']},{email:'other@example.com'},{sub:''},{type:'org'},{exp:now-30},{nbf:now+60}])assert.equal(await verifyOwnerToken(await token(bad),config,keys),null,JSON.stringify(bad))});
+test('wrong issuer/audience/owner/subject/token type/time rejected',async()=>{for(const bad of [{iss:'https://evil.cloudflareaccess.com'},{aud:['other-audience']},{email:'other@example.com'},{sub:''},{sub:'   '},{type:'org'},{exp:now-30},{nbf:now+60}])assert.equal(await verifyOwnerToken(await token(bad),config,keys),null,JSON.stringify(bad))});
 test('missing required expiry and service-token identity rejected',async()=>{assert.equal(await verifyOwnerToken(await token({exp:undefined}),config,keys),null);assert.equal(await verifyOwnerToken(await token({email:undefined,sub:'',common_name:'service-token'}),config,keys),null)});
 test('signature tampering rejected',async()=>{const t=await token();const pieces=t.split('.');pieces[1]=Buffer.from(JSON.stringify({email:config.ownerEmail})).toString('base64url');assert.equal(await verifyOwnerToken(pieces.join('.'),config,keys),null)});
 test('unconfigured and untrusted configuration fails closed',()=>{assert.equal(readAuthConfig({APP_ORIGIN:'',ACCESS_TEAM_DOMAIN:'',ACCESS_AUDIENCE:'',OWNER_EMAIL:''}),null);const valid={APP_ORIGIN:config.origin,ACCESS_TEAM_DOMAIN:config.issuer,ACCESS_AUDIENCE:config.audience,OWNER_EMAIL:config.ownerEmail};assert.deepEqual(readAuthConfig(valid),config);for(const patch of [{APP_ORIGIN:'http://daredakke.example.com'},{ACCESS_TEAM_DOMAIN:'https://evil.test'},{ACCESS_TEAM_DOMAIN:'https://exampleteam.cloudflareaccess.com.evil.test'},{ACCESS_TEAM_DOMAIN:'https://exampleteam.cloudflareaccess.com/path'},{OWNER_EMAIL:'invalid'}])assert.equal(readAuthConfig({...valid,...patch}),null)});
