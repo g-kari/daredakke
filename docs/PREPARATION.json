@@ -1,16 +1,17 @@
 {
   "product": "だれだっけ",
-  "prepared_at_utc": "2026-10-09T07:08:00Z",
-  "purpose": "Cloudflare Workers + D1 migration preparation; repository destination pending",
+  "prepared_at_utc": "2026-10-09T07:33:00Z",
+  "purpose": "Cloudflare Workers + D1 foundation in g-kari/daredakke; no production deployment",
   "verification": {
     "typecheck": "passed",
-    "test_groups": 14,
-    "test_result": "14 passed, 0 failed",
+    "test_groups": 17,
+    "test_result": "17 passed, 0 failed",
     "domain_assertion_groups": 9,
     "local_d1_api": "passed",
     "local_d1_migration": "passed",
     "frontend_build": "passed",
     "worker_bundle_dry_run": "passed",
+    "public_jwks_cache_reuse_outage_rotation_expiry_issuer_isolation_lru": "passed with ephemeral keys and mocked endpoint",
     "production_deploy_guard": "blocked as intended",
     "browser_mobile_keyboard_webmcp": "not verified",
     "production_access_e2e": "not configured or tested"

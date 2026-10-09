@@ -1,4 +1,5 @@
-import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from 'jose';
+import { jwtVerify, type JWTVerifyGetKey } from 'jose';
+import { accessResolver } from './jwks-cache.ts';
 import type { AuthConfig } from './config.ts';
 export type Owner = { ownerId: 'owner'; subject: string };
 export async function verifyOwnerToken(token: string | null, config: AuthConfig, key: JWTVerifyGetKey): Promise<Owner | null> {
@@ -16,6 +17,7 @@ export async function authenticateOwner(request: Request, config: AuthConfig): P
   const token = request.headers.get('Cf-Access-Jwt-Assertion');
   if (!token) return null;
   // The endpoint is built only from configured, validated team domain, never JWT content or request headers.
-  const keys = createRemoteJWKSet(new URL(config.issuer + '/cdn-cgi/access/certs'), { timeoutDuration: 5000 });
+  let keys: JWTVerifyGetKey;
+  try { keys = accessResolver(config.issuer); } catch { return null; }
   return verifyOwnerToken(token, config, keys);
 }

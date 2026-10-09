@@ -44,6 +44,8 @@ checkは型検証・暗号検証・実際のローカルD1を使うAPIテスト�
 
 WorkerはCf-Access-Jwt-AssertionのRS256署名・issuer・audience・期限・not-before・app種別・本人メール・空でないsubjectを検証します。JWT内のissuerから公開鍵URLを決めません。公開鍵の取得先は設定済みチームに固定します。昔のSites用oai-authenticated-user-*ヘッダー、単なるメールヘッダー、未検証のcookieは信用しません。サービス・トークンも受け入れません。
 
+公開鍵のresolverはWorkerの同じisolate内で再利用します。検証済みissuerごとの最大4件のLRUキャッシュで、取得のtimeoutは5秒、未知の鍵による再取得のcooldownは30秒、公開鍵の有効期間は10分です。期限内の鍵は公開鍵エンドポイントの一時停止中も使えますが、期限切れや不明な鍵は認証を拒否します。JWT、メール、本人判定はキャッシュしません。
+
 静的ファイルを含む全リクエストが認証Workerを先に通ります。workers.devとpreview URLは無効です。実際のAccessアプリ、許可ポリシー、ホスト保護の作成・変更には事前承認が必要です。
 
 ## 本番へ進める前
