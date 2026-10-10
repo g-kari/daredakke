@@ -90,6 +90,39 @@ test('Escape in the discard alert keeps editing; explicit discard clears, unchan
   expect(api.posts).toHaveLength(0); expect(api.errors).toEqual([]);
 });
 
+for (const kind of ['person', 'account', 'import']) {
+  test(`rapid second Escape keeps ${kind} input and restores focus repeatedly`, async ({ page }) => {
+    const api = await start(page);
+    let input, value;
+    if (kind === 'person') {
+      await person(page);
+      input = form(page).getByRole('textbox', { name: 'メモ', exact: true });
+      value = 'Unsaved synthetic note';
+    } else if (kind === 'account') {
+      await page.getByRole('button', { name: 'アカウントを追加', exact: true }).click();
+      input = form(page).getByLabel('プロフィールURL / ID 必須', { exact: true });
+      value = '100000000000000001'; await input.fill(value);
+    } else {
+      await page.getByRole('button', { name: 'JSONを読み込む', exact: true }).click();
+      input = form(page).getByRole('textbox', { name: 'JSON', exact: true });
+      value = JSON.stringify({ format: 'daredakke', version: 1, data: blank() });
+      await input.fill(value);
+    }
+    await input.focus();
+    for (let i = 0; i < 5; i++) {
+      await dismiss(page, 'Escape');
+      // Do not sleep, wait for an animation/layer style, or retry the key: the
+      // focused alert must accept the user's next Escape immediately.
+      await page.keyboard.press('Escape');
+      await expect(alert(page)).toHaveCount(0);
+      await expect(input).toHaveValue(value); await expect(input).toBeFocused();
+      expect(api.posts).toHaveLength(0); expect(api.errors).toEqual([]);
+    }
+    await dismiss(page, 'Escape'); await discard(page);
+    expect(api.posts).toHaveLength(0); expect(api.errors).toEqual([]);
+  });
+}
+
 test('account edits survive repeated dismissal and still save normally', async ({ page }) => {
   const api = await start(page);
   await page.getByRole('button', { name: 'アカウントを追加', exact: true }).click();
