@@ -65,6 +65,21 @@ test('B2-4 list and profile preserve actual content and global scope once', asyn
   await expect(profile.getByRole('link')).toHaveCount(0); // demo must never open external profiles.
   await noOverflow(page);
   await page.screenshot({ path: `test-results/ui/${info.project.name}-profile.png`, fullPage: false, animations: 'disabled' });
+  if (info.project.use.isMobile) {
+    const close = profile.getByRole('button', { name: 'Close', exact: true });
+    for (const control of [close, profile.locator('.account-line>button').first()]) {
+      const bounds = await control.boundingBox();
+      expect(bounds.width).toBeGreaterThanOrEqual(44); expect(bounds.height).toBeGreaterThanOrEqual(44);
+    }
+    const maintenance = profile.locator('.record-maintenance>summary');
+    await maintenance.scrollIntoViewIfNeeded();
+    const bounds = await maintenance.boundingBox();
+    expect(bounds.y).toBeGreaterThanOrEqual(0); expect(bounds.y + bounds.height).toBeLessThanOrEqual(page.viewportSize().height);
+    await close.click();
+    await expect(page.getByRole('button', { name: 'そらの記録を開く', exact: true })).toBeFocused();
+    await page.keyboard.press('Tab');
+    expect(await page.evaluate(() => getComputedStyle(document.activeElement).outlineStyle)).not.toBe('none');
+  }
   expect(api.posts).toHaveLength(0); expect(api.errors).toEqual([]);
 });
 
