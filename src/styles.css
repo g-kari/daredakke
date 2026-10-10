@@ -197,6 +197,7 @@ a { color:#cab4ec; } svg { flex-shrink:0; }
 .import-empty-warning input { width:20px; height:20px; flex-shrink:0; margin-top:3px; accent-color:var(--primary); }
 .import-actions { flex-wrap:wrap; }
 @media (max-width:420px) { .import-counts { gap:10px; } .import-counts>section { padding:10px; } .import-actions>[data-slot=button] { width:100%; } }
+@media (max-width:800px) { .import-confirmation [data-slot=alert-dialog-action],.import-confirmation [data-slot=alert-dialog-cancel] { min-height:44px; min-width:44px; } }
 .form-error,.error-banner { color:#ffc2c8; background:#492e35; border:1px solid #88606b; border-radius:5px; padding:12px; font-size:.875rem; }
 .error-banner { display:flex; align-items:center; justify-content:space-between; gap:15px; margin:16px 20px; }
 .spin { animation:spin 1.5s linear infinite; } @keyframes spin { to { transform:rotate(360deg); } }

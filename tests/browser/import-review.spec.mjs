@@ -199,16 +199,46 @@ test('final cancellation and repeated dialog dismissal preserve the review and u
   await page.evaluate(() => { window.setTimeout(() => window.location.reload(), 0); });
   const native = await waiting; expect(native.type()).toBe('beforeunload'); await native.dismiss();
   await expect(review(page)).toBeVisible(); await expect(jsonInput(page)).toHaveValue(text);
-  for (const method of ['Escape', 'Close', 'Backdrop']) {
+  await page.evaluate(() => {
+    window.__syntheticDismissalEvents = [];
+    const describe = target => target instanceof Element ? {
+      tag: target.tagName, slot: target.getAttribute('data-slot'), state: target.getAttribute('data-state'),
+      role: target.getAttribute('role'), pointerEvents: getComputedStyle(target).pointerEvents,
+    } : null;
+    for (const type of ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'click', 'dismissableLayer.pointerDownOutside']) {
+      for (const capture of [true, false]) document.addEventListener(type, event => {
+        window.__syntheticDismissalEvents.push({ type, capture, target: describe(event.target),
+          defaultPrevented: event.defaultPrevented, trusted: event.isTrusted, time: performance.now() });
+        if (capture && type === 'dismissableLayer.pointerDownOutside') window.setTimeout(() => {
+          window.__syntheticDismissalEvents.push({ type, phase: 'after-dispatch', target: describe(event.target),
+            defaultPrevented: event.defaultPrevented, time: performance.now() });
+        }, 0);
+      }, capture);
+    }
+    for (const type of ['focus', 'blur']) window.addEventListener(type, () => {
+      window.__syntheticDismissalEvents.push({ type, time: performance.now() });
+    });
+    document.addEventListener('visibilitychange', () => {
+      window.__syntheticDismissalEvents.push({ type: 'visibilitychange', visibility: document.visibilityState, time: performance.now() });
+    });
+  });
+  try { for (const method of ['Escape', 'Close', 'Backdrop']) {
     await jsonInput(page).focus();
     if (method === 'Escape') await page.keyboard.press('Escape');
     else if (method === 'Close') await form(page).getByRole('button', { name: 'Close', exact: true }).click();
-    else if (info.project.use.hasTouch) await page.touchscreen.tap(10, 10);
-    else await page.mouse.click(10, 10);
+    else {
+      expect(await page.evaluate(() => document.elementFromPoint(10, 10)?.getAttribute('data-slot'))).toBe('dialog-overlay');
+      if (info.project.use.hasTouch) await page.touchscreen.tap(10, 10);
+      else await page.mouse.click(10, 10);
+    }
     await expect(alert(page).getByRole('heading', { name: '保存していない入力を破棄しますか？', exact: true })).toBeVisible();
     await alert(page).getByRole('button', { name: '編集を続ける', exact: true }).click();
     if (method !== 'Close') await expect(jsonInput(page)).toBeFocused();
     await expect(review(page)).toBeVisible(); await expect(jsonInput(page)).toHaveValue(text);
+  } } finally {
+    await info.attach('synthetic-dismissal-events', { body: JSON.stringify({
+      sessionCompleted: api.sessionCompleted, events: await page.evaluate(() => window.__syntheticDismissalEvents),
+    }), contentType: 'application/json' });
   }
   expect(api.posts).toHaveLength(0); expect(api.errors).toEqual([]);
 });
@@ -437,7 +467,9 @@ test('review and final confirmation fit 390/1280px, preserve keyboard focus and 
   expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width + 1); expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height + 1);
   if (info.project.use.isMobile) {
     for (const button of [cancel, finalButton(page)]) {
-      const box = await button.boundingBox(); expect(box.width).toBeGreaterThanOrEqual(44); expect(box.height).toBeGreaterThanOrEqual(44);
+      await expect.poll(async () => {
+        const box = await button.boundingBox(); return Math.min(box.width, box.height);
+      }).toBeGreaterThanOrEqual(44);
     }
   }
   await info.attach('import-confirmation-' + viewport.width, { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });

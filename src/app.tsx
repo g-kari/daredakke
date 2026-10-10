@@ -19,7 +19,7 @@ import { type Person, type Account, type Service, type Data, type RecordState, c
 
 type DraftKind = 'person' | 'account' | 'import';
 type DraftFocus = { kind: DraftKind; target: HTMLElement; dialog: HTMLElement; epoch: number };
-type Confirm = { title: string; message: string; action: string; run: () => Promise<void> };
+type Confirm = { title: string; message: string; action: string; run: () => Promise<void>; kind?: 'import' };
 type StagedImport = { review: ImportReview; text: string; source: string; baseline: RecordState; revision: number; namespace: string; epoch: number; readEpoch: number };
 const blankPerson = (): PersonDraft => ({ name: '', aliases: '', tags: '', notes: '' });
 const split = (value: string) => value.split(/[,、\n]/).map(v => v.trim()).filter(Boolean);
@@ -340,7 +340,7 @@ export default function FriendRecord() {
     if (!isCurrent()) { setImportReview(null); setEmptyImportConfirmed(false); setFormError('表示中の記録か入力が変わりました。内容をもう一度確認してください。'); return; }
     const r = staged.review;
     if (importConfirmButton.current) importConfirmationFocus.current = { target: importConfirmButton.current, epoch: staged.epoch, readEpoch: staged.readEpoch, namespace: staged.namespace };
-    setConfirmation({ title: `${scope === 'demo' ? 'デモ' : 'マイレコード'}を読み込みデータに置き換えますか？`, message: `${r.people.before}人・${r.accounts.before}アカウントから、${r.people.after}人・${r.accounts.after}アカウントへ置き換えます。今の記録から${r.people.removed}人・${r.accounts.removed}アカウントが取り除かれます。${r.empty ? 'この保存先の記録は空になります。' : ''}もう一方の保存先には影響しません。直前の記録へ戻せます。`, action: '置き換えて読み込む', run: async () => {
+    setConfirmation({ kind: 'import', title: `${scope === 'demo' ? 'デモ' : 'マイレコード'}を読み込みデータに置き換えますか？`, message: `${r.people.before}人・${r.accounts.before}アカウントから、${r.people.after}人・${r.accounts.after}アカウントへ置き換えます。今の記録から${r.people.removed}人・${r.accounts.removed}アカウントが取り除かれます。${r.empty ? 'この保存先の記録は空になります。' : ''}もう一方の保存先には影響しません。直前の記録へ戻せます。`, action: '置き換えて読み込む', run: async () => {
       if (!isCurrent()) return;
       if (await update(r.data, 'JSONを読み込みました')) { clearDraftFocus('import'); importReadEpoch.current++; setImportOpen(false); setImportText(''); setImportReview(null); setImportSource('貼り付けたJSON'); setEmptyImportConfirmed(false); setSelected(null); }
     } });
@@ -437,6 +437,6 @@ export default function FriendRecord() {
     </DialogContent></Dialog>
     <Dialog open={exportOpen} onOpenChange={setExportOpen}><DialogContent className="record-dialog"><DialogHeader><DialogTitle>JSONを書き出す</DialogTitle><DialogDescription>{scope === 'demo' ? 'デモ' : 'マイレコード'}の{data.people.length}人・{data.accounts.length}アカウントを保存します。</DialogDescription></DialogHeader><Textarea disabled={busy} readOnly rows={8} value={exportData(data)} aria-label="書き出しJSON" spellCheck={false} /><p className="small-note">名前・メモ・URLが含まれます。ファイルは自分で安全に保管してください。操作履歴は書き出しません。</p><div className="settings-actions"><Button onClick={downloadExport}><Download />ファイルを保存</Button><Button variant="outline" onClick={() => void copyExport()}>{copied ? <Check /> : <Copy />}{copied ? 'コピー済み' : 'コピー'}</Button></div></DialogContent></Dialog>
     <AlertDialog open={!!discard} onOpenChange={open => { if (!open) setDiscard(null); }}><AlertDialogContent onCloseAutoFocus={restoreDiscardFocus}><AlertDialogTitle>保存していない入力を破棄しますか？</AlertDialogTitle><AlertDialogDescription>入力した変更はまだ保存されていません。編集を続けると、入力はそのまま残ります。</AlertDialogDescription><AlertDialogFooter><AlertDialogCancel>編集を続ける</AlertDialogCancel><AlertDialogAction onClick={discardChanges}>入力を破棄する</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
-    <AlertDialog open={!!confirmation} onOpenChange={open => { if (!open) setConfirmation(null); }}><AlertDialogContent onCloseAutoFocus={restoreImportConfirmationFocus}><AlertDialogTitle>{confirmation?.title}</AlertDialogTitle><AlertDialogDescription>{confirmation?.message}</AlertDialogDescription><AlertDialogFooter><AlertDialogCancel>キャンセル</AlertDialogCancel><AlertDialogAction onClick={() => { const c = confirmation; setConfirmation(null); if (c) void c.run(); }} disabled={busy}>{confirmation?.action}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+    <AlertDialog open={!!confirmation} onOpenChange={open => { if (!open) setConfirmation(null); }}><AlertDialogContent className={confirmation?.kind === 'import' ? 'import-confirmation' : undefined} onCloseAutoFocus={restoreImportConfirmationFocus}><AlertDialogTitle>{confirmation?.title}</AlertDialogTitle><AlertDialogDescription>{confirmation?.message}</AlertDialogDescription><AlertDialogFooter><AlertDialogCancel>キャンセル</AlertDialogCancel><AlertDialogAction onClick={() => { const c = confirmation; setConfirmation(null); if (c) void c.run(); }} disabled={busy}>{confirmation?.action}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
   </div>;
 }
