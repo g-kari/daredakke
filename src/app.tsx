@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import { type PersonDraft, type AccountDraft, personDraftChanged, accountDraftChanged } from '@/lib/drafts';
 import { identityChanged, readNamespace, readSessionFile, verifyLoadedNamespace, sessionChecks } from '@/lib/session';
 import { buildImportReview, type ImportReview } from '@/domain/import-review';
+import { createRecordSearch, searchPeople } from '@/domain/search';
 import { type Person, type Account, type Service, type Data, type RecordState, colors, demoData, empty, normalizeAccount, validateData, change, undoChange, mergePeople, duplicateGroups, parseImport, exportData } from '@/domain/records';
 
 type DraftKind = 'person' | 'account' | 'import';
@@ -49,7 +50,7 @@ export default function FriendRecord() {
   const [error, setError] = useState('');
   const [tab, setTab] = useState('people');
   const [query, setQuery] = useState('');
-  const [serviceFilter, setServiceFilter] = useState('all');
+  const [serviceFilter, setServiceFilter] = useState<Service | 'all'>('all');
   const [selected, setSelected] = useState<string | null>(null);
   const [personDraft, setPersonDraft] = useState<PersonDraft | null>(null);
   const [accountDraft, setAccountDraft] = useState<AccountDraft | null>(null);
@@ -94,12 +95,9 @@ export default function FriendRecord() {
   const person = data.people.find(p => p.id === selected);
   const unresolved = data.accounts.filter(a => a.personId === null);
   const duplicate = duplicateGroups(data);
-  const normalizedQuery = query.toLocaleLowerCase();
-  const match = (values: string[]) => values.join(' ').toLocaleLowerCase().includes(normalizedQuery);
-  const filteredPeople = data.people.filter(p => {
-    const accounts = data.accounts.filter(a => a.personId === p.id);
-    return (serviceFilter === 'all' || accounts.some(a => a.service === serviceFilter)) && match([p.name, ...p.aliases, ...p.tags, p.notes, ...accounts.flatMap(a => [a.label, a.url, a.service])]);
-  });
+  const search = createRecordSearch(query);
+  const match = search.matches;
+  const filteredPeople = searchPeople(data, search, serviceFilter);
   const desktopPerson = filteredPeople.find(p => p.id === selected) || filteredPeople[0];
   useEffect(() => { setMergeTarget('none'); }, [desktopPerson?.id, person?.id]);
   const accountMatch = (a: Account) => (serviceFilter === 'all' || a.service === serviceFilter) && match([a.label, a.url, a.service, data.people.find(p => p.id === a.personId)?.name || '']);
@@ -254,11 +252,11 @@ export default function FriendRecord() {
     if (!ctx?.registerTool) return;
     const life = new AbortController();
     const tools = [
-      { name: 'search_friend_records', title: '人とアカウントを検索', description: '現在の保存先の人とアカウントを検索し、表示中の検索欄にも反映します。記録は変更しません。', inputSchema: { type: 'object', properties: { query: { type: 'string', maxLength: 100 } }, required: ['query'], additionalProperties: false }, annotations: { readOnlyHint: true, untrustedContentHint: true }, execute: (input: unknown) => {
+      { name: 'search_friend_records', title: '人とアカウントを検索', description: '現在の保存先を検索し、検索欄にも反映します。空白で区切ったキーワードをすべて含む人を探します。記録は変更しません。', inputSchema: { type: 'object', properties: { query: { type: 'string', maxLength: 100 } }, required: ['query'], additionalProperties: false }, annotations: { readOnlyHint: true, untrustedContentHint: true }, execute: (input: unknown) => {
         if (sessionPending.current) throw new Error('ログイン確認中です。');
         const i = input as { query?: unknown }; if (!i || typeof i.query !== 'string' || i.query.length > 100 || Object.keys(i).some(k => k !== 'query')) throw new Error('queryは100文字までの文字列です。');
-        const q = i.query.toLocaleLowerCase(); setQuery(i.query); setTab('people'); setServiceFilter('all');
-        const d = stateRef.current?.data || empty(); return { people: d.people.filter(p => [p.name, ...p.aliases, ...p.tags, p.notes, ...d.accounts.filter(a => a.personId === p.id).flatMap(a => [a.label, a.url])].join(' ').toLocaleLowerCase().includes(q)).map(p => ({ id: p.id, name: p.name, accounts: d.accounts.filter(a => a.personId === p.id) })) };
+        setQuery(i.query); setTab('people'); setServiceFilter('all');
+        const d = stateRef.current?.data || empty(); return { people: searchPeople(d, createRecordSearch(i.query)).map(p => ({ id: p.id, name: p.name, accounts: d.accounts.filter(a => a.personId === p.id) })) };
       } },
       { name: 'start_person_creation', title: '人の追加を開く', description: '人を追加する入力画面を開きます。保存はユーザーが画面で行います。', inputSchema: { type: 'object', properties: {}, additionalProperties: false }, annotations: { readOnlyHint: false, untrustedContentHint: false }, execute: (input: unknown) => {
         if (sessionPending.current) throw new Error('ログイン確認中です。');
@@ -392,15 +390,15 @@ export default function FriendRecord() {
       <Tabs value={tab} onValueChange={setTab} className="workspace-tabs">
         <div className="navigation-bar"><TabsList className="tab-list" variant="line"><TabsTrigger value="people">人<span className="count">{data.people.length}</span></TabsTrigger><TabsTrigger value="unresolved">未整理<span className="count">{unresolved.length}</span></TabsTrigger><TabsTrigger value="duplicates">重複候補<span className="count">{duplicate.length}</span></TabsTrigger><TabsTrigger value="settings">保存・バックアップ</TabsTrigger></TabsList></div>
         <div className={'workspace-content' + (tab === 'people' ? ' people-workspace' : '')}>
-          {tab !== 'settings' && <aside className="collection-sidebar" aria-label="人の記録"><div className="collection-toolbar"><div className="search-field"><Search size={17} aria-hidden="true" /><Input disabled={busy} value={query} onChange={e => setQuery(e.target.value)} maxLength={100} placeholder="名前、別名、タグを検索" aria-label="記録を検索" /></div><div className="collection-actions"><Button onClick={() => editPerson()} disabled={!state || busy}><Plus aria-hidden="true" />人を追加</Button><Button variant="ghost" onClick={() => editAccount()} disabled={!state || busy}><Plus aria-hidden="true" />アカウントを追加</Button></div></div>
+          {tab !== 'settings' && <aside className="collection-sidebar" aria-label="人の記録"><div className="collection-toolbar"><div className="search-field"><Search size={17} aria-hidden="true" /><Input disabled={busy} value={query} onChange={e => setQuery(e.target.value)} maxLength={100} placeholder="名前、別名、タグを検索" aria-label="記録を検索" aria-describedby="record-search-hint" /><p id="record-search-hint" className="search-hint">空白で区切ると、すべてのキーワードで絞り込めます。</p></div><div className="collection-actions"><Button onClick={() => editPerson()} disabled={!state || busy}><Plus aria-hidden="true" />人を追加</Button><Button variant="ghost" onClick={() => editAccount()} disabled={!state || busy}><Plus aria-hidden="true" />アカウントを追加</Button></div></div>
           <div className="collection-heading"><h2>人の記録</h2><span>{filteredPeople.length}人</span></div>
           {!state && !error && <div className="people-list" aria-label="読み込み中">{[1, 2, 3, 4].map(i => <Skeleton key={i} className="loading-row" />)}</div>}
           <div className="people-list">{filteredPeople.map(p => <button key={p.id} className={'person-row' + (tab === 'people' && (compactProfile ? person?.id : desktopPerson?.id) === p.id ? ' selected' : '')} style={{ '--person-color': p.color } as React.CSSProperties} onClick={event => { profileFocus.current = { target: event.currentTarget, epoch: identityEpoch.current }; setSelected(p.id); setMergeTarget('none'); setTab('people'); }} aria-pressed={tab === 'people' && (compactProfile ? person?.id : desktopPerson?.id) === p.id} aria-label={p.name + 'の記録を開く'}><span className="initial" aria-hidden="true">{Array.from(p.name)[0]}</span><span className="person-row-text"><strong>{p.name}</strong><span className="aliases">{p.aliases.join(' / ') || '別名なし'}</span>{p.tags.length > 0 && <span className="row-tags">{p.tags.slice(0, 2).join(' · ')}{p.tags.length > 2 ? ` ほか${p.tags.length - 2}個` : ''}</span>}</span></button>)}</div>
-          {state && !filteredPeople.length && <div className="sidebar-empty"><p>{query || serviceFilter !== 'all' ? '一致する人がいません' : '人の記録はまだありません'}</p><span>{query || serviceFilter !== 'all' ? '検索やサービスの条件を変えてみてください。' : '「人を追加」から名前を登録できます。'}</span></div>}
+          {state && !filteredPeople.length && <div className="sidebar-empty"><p>{search.hasTerms || serviceFilter !== 'all' ? '一致する人がいません' : '人の記録はまだありません'}</p><span>{search.hasTerms || serviceFilter !== 'all' ? '検索やサービスの条件を変えてみてください。' : '「人を追加」から名前を登録できます。'}</span></div>}
           </aside>}
           <div className="workspace-detail">
-            <TabsContent value="people">{!compactProfile && desktopPerson && <article className="desktop-profile" aria-label={desktopPerson.name + 'のプロフィール'}>{profileContent(desktopPerson)}</article>}{!compactProfile && !desktopPerson && state && <div className="empty-state"><UserRound size={30} aria-hidden="true" /><h2>{query || serviceFilter !== 'all' ? '条件に合う人がいません' : '覚えておきたい人を追加'}</h2><p>{query || serviceFilter !== 'all' ? '左側の検索やサービスの条件を変えると、記録を探せます。' : '名前とアカウントをひとつにまとめておけます。'}</p></div>}</TabsContent>
-        <TabsContent value="unresolved"><div className="section-head"><h2>だれのアカウント？</h2><span>紐づけ先を選んで整理</span></div><div className="accounts-grid">{unresolved.filter(accountMatch).map(a => accountRow(a))}</div>{state && !unresolved.filter(accountMatch).length && <div className="empty-state"><Link2 size={34} /><h3>{query || serviceFilter !== 'all' ? '一致する未整理アカウントがありません' : '未整理アカウントはありません'}</h3><p>名前のわからないアカウントは、紐づけ先を「未整理のまま」で追加できます。</p><Button variant="outline" onClick={() => editAccount()}><Plus />アカウントを追加</Button></div>}</TabsContent>
+            <TabsContent value="people">{!compactProfile && desktopPerson && <article className="desktop-profile" aria-label={desktopPerson.name + 'のプロフィール'}>{profileContent(desktopPerson)}</article>}{!compactProfile && !desktopPerson && state && <div className="empty-state"><UserRound size={30} aria-hidden="true" /><h2>{search.hasTerms || serviceFilter !== 'all' ? '条件に合う人がいません' : '覚えておきたい人を追加'}</h2><p>{search.hasTerms || serviceFilter !== 'all' ? '左側の検索やサービスの条件を変えると、記録を探せます。' : '名前とアカウントをひとつにまとめておけます。'}</p></div>}</TabsContent>
+        <TabsContent value="unresolved"><div className="section-head"><h2>だれのアカウント？</h2><span>紐づけ先を選んで整理</span></div><div className="accounts-grid">{unresolved.filter(accountMatch).map(a => accountRow(a))}</div>{state && !unresolved.filter(accountMatch).length && <div className="empty-state"><Link2 size={34} /><h3>{search.hasTerms || serviceFilter !== 'all' ? '一致する未整理アカウントがありません' : '未整理アカウントはありません'}</h3><p>名前のわからないアカウントは、紐づけ先を「未整理のまま」で追加できます。</p><Button variant="outline" onClick={() => editAccount()}><Plus />アカウントを追加</Button></div>}</TabsContent>
         <TabsContent value="duplicates"><div className="section-head"><h2>同じアカウントの重複候補</h2></div><p className="section-help">同じサービスのプロフィールURLが一致した登録だけを表示します。名前や顔からは判定せず、人の統合は自分で確かめて行います。</p><div className="duplicate-list">{duplicate.filter(group => group.some(accountMatch)).map(group => {
           const owners = [...new Set(group.map(a => a.personId).filter(Boolean))] as string[];
           return <article className="duplicate-card" key={group[0].key}><div className="duplicate-heading"><ServiceMark service={group[0].service} /><div><strong>{group[0].service}のURLが一致</strong><p className="account-url">{group[0].url}</p></div><span className="candidate-label">{group.length}件</span></div><div className="duplicate-owners">{group.map(a => <div key={a.id}><UserRound size={17} /><strong>{data.people.find(p => p.id === a.personId)?.name || '未整理'}</strong><span>{a.label}</span><Button variant="ghost" onClick={() => { if (a.personId) { setSelected(a.personId); setTab('people'); setQuery(''); setServiceFilter('all'); } else setTab('unresolved'); }}>記録を確認</Button></div>)}</div><div className="duplicate-actions">{owners.length === 2 && <Button variant="outline" disabled={busy} onClick={() => confirmMerge(owners[0], owners[1])}><GitMerge />この2人を統合</Button>}{owners.length <= 1 && group.every(a => a.personId === group[0].personId) && <Button variant="outline" disabled={busy} onClick={() => setConfirmation({ title: '重複登録を1件にまとめますか？', message: '最初の登録を残し、同じURLの追加登録を取り除きます。人の記録は変わりません。元に戻せます。', action: '1件にまとめる', run: async () => { const remove = new Set(group.slice(1).map(a => a.id)); await update({ ...data, accounts: data.accounts.filter(a => !remove.has(a.id)) }, '重複登録をまとめました'); } })}><Copy />重複登録をまとめる</Button>}<span>直近10操作は元に戻せます</span></div></article>;

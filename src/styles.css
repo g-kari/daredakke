@@ -71,6 +71,7 @@ a { color:#cab4ec; } svg { flex-shrink:0; }
 .search-field { position:relative; min-width:0; }
 .search-field svg { position:absolute; top:13px; left:11px; color:#b9bac4; }
 .search-field input { padding-left:35px; font-size:.75rem; width:100%; }
+.search-hint { margin-top:6px; color:var(--muted-foreground); font-size:.75rem; line-height:1.6; }
 .collection-actions { display:flex; flex-wrap:wrap; gap:4px; }
 .collection-actions [data-slot=button] { font-size:.75rem; padding:8px 10px; }
 .collection-actions [data-slot=button]:last-child { padding-inline:8px; }
