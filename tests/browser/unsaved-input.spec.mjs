@@ -38,7 +38,7 @@ const alert = page => page.getByRole('alertdialog');
 async function person(page) {
   await page.getByRole('button', { name: '人を追加', exact: true }).first().click();
   await form(page).getByLabel('名前 必須', { exact: true }).fill('Synthetic friend');
-  await form(page).getByLabel('メモ', { exact: true }).fill('Unsaved synthetic note');
+  await form(page).getByRole('textbox', { name: 'メモ', exact: true }).fill('Unsaved synthetic note');
 }
 async function dismiss(page, method) {
   if (method === 'Escape') await page.keyboard.press('Escape');
@@ -67,13 +67,13 @@ test('Escape, Cancel, Close and backdrop preserve person input and return keyboa
       return active?.tagName === 'TEXTAREA' ? 'notes' : active?.textContent;
     });
     await dismiss(page, method);
-    if (method === 'Escape') await info.attach('discard-confirmation', { body: await page.screenshot(), contentType: 'image/png' });
+    if (method === 'Escape') await info.attach('discard-confirmation', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
     await keep(page);
-    await expect(form(page).getByLabel('メモ', { exact: true })).toHaveValue('Unsaved synthetic note');
+    await expect(form(page).getByRole('textbox', { name: 'メモ', exact: true })).toHaveValue('Unsaved synthetic note');
     // Escape/backdrop should restore the previously focused form control.
     if (method === 'Escape' || method === 'Backdrop') {
       expect(await page.evaluate(() => document.activeElement?.closest('[role="dialog"]') !== null)).toBe(true);
-      if (original === 'notes') await expect(form(page).getByLabel('メモ', { exact: true })).toBeFocused();
+      if (original === 'notes') await expect(form(page).getByRole('textbox', { name: 'メモ', exact: true })).toBeFocused();
     }
   }
   expect(api.posts).toHaveLength(0); expect(api.errors).toEqual([]);
@@ -83,7 +83,7 @@ test('Escape in the discard alert keeps editing; explicit discard clears, unchan
   const api = await start(page); await person(page); await dismiss(page, 'Escape');
   await page.keyboard.press('Escape'); await expect(alert(page)).toHaveCount(0);
   await expect(form(page).getByLabel('名前 必須', { exact: true })).toHaveValue('Synthetic friend');
-  await expect(form(page).getByLabel('メモ', { exact: true })).toBeFocused();
+  await expect(form(page).getByRole('textbox', { name: 'メモ', exact: true })).toBeFocused();
   await dismiss(page, 'キャンセル'); await discard(page);
   await page.getByRole('button', { name: '人を追加', exact: true }).first().click();
   await expect(form(page).getByLabel('名前 必須', { exact: true })).toHaveValue('');
@@ -115,13 +115,13 @@ test('staged import JSON survives cancellation and explicit discard clears it', 
   const api = await start(page); const json = JSON.stringify({ format: 'daredakke', version: 1, data: blank() });
   await page.getByRole('tab', { name: '連携・保存' }).click();
   await page.getByRole('button', { name: 'JSONを読み込む', exact: true }).click();
-  await form(page).getByLabel('JSON', { exact: true }).fill(json);
+  await form(page).getByRole('textbox', { name: 'JSON', exact: true }).fill(json);
   for (const method of ['Close', 'Escape', 'Backdrop']) {
-    await dismiss(page, method); await keep(page); await expect(form(page).getByLabel('JSON', { exact: true })).toHaveValue(json);
+    await dismiss(page, method); await keep(page); await expect(form(page).getByRole('textbox', { name: 'JSON', exact: true })).toHaveValue(json);
   }
   await dismiss(page, 'Escape'); await discard(page);
   await page.getByRole('button', { name: 'JSONを読み込む', exact: true }).click();
-  await expect(form(page).getByLabel('JSON', { exact: true })).toHaveValue('');
+  await expect(form(page).getByRole('textbox', { name: 'JSON', exact: true })).toHaveValue('');
   await page.keyboard.press('Escape'); await expect(form(page)).toHaveCount(0); await expect(alert(page)).toHaveCount(0);
   expect(api.posts).toHaveLength(0); expect(api.errors).toEqual([]);
 });
@@ -132,12 +132,12 @@ test('repeated WebMCP creation requests protect the latest draft and original fo
   await expect(alert(page)).toBeVisible();
   await page.evaluate(() => window.__daredakkeTools.get('start_person_creation').execute({}));
   await keep(page);
-  await expect(form(page).getByLabel('メモ', { exact: true })).toHaveValue('Unsaved synthetic note');
-  await expect(form(page).getByLabel('メモ', { exact: true })).toBeFocused();
+  await expect(form(page).getByRole('textbox', { name: 'メモ', exact: true })).toHaveValue('Unsaved synthetic note');
+  await expect(form(page).getByRole('textbox', { name: 'メモ', exact: true })).toBeFocused();
   await page.evaluate(() => window.__daredakkeTools.get('start_person_creation').execute({}));
   await page.evaluate(() => window.__daredakkeTools.get('start_person_creation').execute({}));
   await page.keyboard.press('Escape'); await expect(alert(page)).toHaveCount(0);
-  await expect(form(page).getByLabel('メモ', { exact: true })).toBeFocused();
+  await expect(form(page).getByRole('textbox', { name: 'メモ', exact: true })).toBeFocused();
   expect(api.posts).toHaveLength(0); expect(api.errors).toEqual([]);
 });
 
@@ -169,10 +169,10 @@ test('editing from the person Sheet preserves the note and nested-modal focus', 
   const api = await start(page, data);
   await page.getByRole('button', { name: 'Synthetic saved friendの記録を開く', exact: true }).click();
   await form(page).getByRole('button', { name: '編集', exact: true }).click();
-  await form(page).getByLabel('メモ', { exact: true }).fill('Edited synthetic note');
+  await form(page).getByRole('textbox', { name: 'メモ', exact: true }).fill('Edited synthetic note');
   await dismiss(page, 'Escape'); await keep(page);
-  await expect(form(page).getByLabel('メモ', { exact: true })).toHaveValue('Edited synthetic note');
-  await expect(form(page).getByLabel('メモ', { exact: true })).toBeFocused();
+  await expect(form(page).getByRole('textbox', { name: 'メモ', exact: true })).toHaveValue('Edited synthetic note');
+  await expect(form(page).getByRole('textbox', { name: 'メモ', exact: true })).toBeFocused();
   await dismiss(page, 'キャンセル');
   await alert(page).getByRole('button', { name: '入力を破棄する', exact: true }).click();
   await expect(alert(page)).toHaveCount(0);
@@ -183,12 +183,15 @@ test('editing from the person Sheet preserves the note and nested-modal focus', 
 
 test('page reload warns only while unsaved input remains and cancellation preserves fields', async ({ page }) => {
   const api = await start(page); await person(page);
-  const waiting = page.waitForEvent('dialog');
-  const reload = page.reload().catch(error => { if (!error.message.includes('ERR_ABORTED')) throw error; });
+  const originalUrl = page.url(), waiting = page.waitForEvent('dialog');
+  // A dismissed beforeunload intentionally prevents navigation. Trigger native
+  // reload without a Playwright navigation waiter that can never reach 'load'.
+  await page.evaluate(() => { window.setTimeout(() => window.location.reload(), 0); });
   const native = await waiting;
   expect(native.type()).toBe('beforeunload');
-  await native.dismiss(); await reload;
-  await expect(form(page).getByLabel('メモ', { exact: true })).toHaveValue('Unsaved synthetic note');
+  await native.dismiss();
+  await expect(page).toHaveURL(originalUrl);
+  await expect(form(page).getByRole('textbox', { name: 'メモ', exact: true })).toHaveValue('Unsaved synthetic note');
   await dismiss(page, 'Escape'); await discard(page);
   let unexpected = false;
   page.once('dialog', async dialog => { unexpected = true; await dialog.dismiss(); });
@@ -200,7 +203,7 @@ test('page reload warns only while unsaved input remains and cancellation preser
 test('reverting all person fields to their initial values removes the navigation warning', async ({ page }) => {
   const api = await start(page); await person(page);
   await form(page).getByLabel('名前 必須', { exact: true }).fill('');
-  await form(page).getByLabel('メモ', { exact: true }).fill('');
+  await form(page).getByRole('textbox', { name: 'メモ', exact: true }).fill('');
   let unexpected = false;
   page.once('dialog', async dialog => { unexpected = true; await dialog.dismiss(); });
   await page.reload(); await expect(page.getByText('保存済み', { exact: true })).toBeVisible();

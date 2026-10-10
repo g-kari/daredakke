@@ -28,3 +28,11 @@ jobs:
       - run: npm run db:local
       - run: npm run dry-run
       - run: npm run bundle:worker
+      - name: Retain verified bundled Worker
+        if: success()
+        uses: actions/upload-artifact@v6
+        with:
+          name: verified-bundled-worker
+          path: dist-worker-bundled/
+          if-no-files-found: error
+          retention-days: 1
