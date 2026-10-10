@@ -16,7 +16,8 @@
     "db:local": "wrangler d1 migrations apply DB --local",
     "dry-run": "npm run build && wrangler deploy --dry-run",
     "bundle:worker": "npm run build && node scripts/generate-static-assets.mjs && wrangler deploy --config wrangler.bundled.jsonc --dry-run --outdir dist-worker-bundled",
-    "deploy": "node scripts/deny-unapproved-deploy.mjs"
+    "deploy": "node scripts/deny-unapproved-deploy.mjs",
+    "test:browser": "playwright test --config tests/browser/playwright.config.mjs"
   },
   "dependencies": {
     "class-variance-authority": "0.7.1",
@@ -32,6 +33,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261009.1",
+    "@playwright/test": "1.64.0",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
