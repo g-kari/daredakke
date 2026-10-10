@@ -49,6 +49,7 @@ test('B2-4 list and profile preserve actual content and global scope once', asyn
   await expect(page.getByRole('button', { name: 'JSONを読み込む', exact: true })).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'すべて', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await noOverflow(page);
+  if (!info.project.use.isMobile) expect((await page.locator('.app-header').boundingBox()).height).toBeLessThan(100);
   await mkdir('test-results/ui', { recursive: true });
   await page.screenshot({ path: `test-results/ui/${info.project.name}-list.png`, fullPage: true, animations: 'disabled' });
   const profile = await select(page, info, 'そら');
@@ -59,7 +60,7 @@ test('B2-4 list and profile preserve actual content and global scope once', asyn
   await expect(profile.locator('.account-row')).toHaveCount(3);
   await expect(profile.getByRole('link')).toHaveCount(0); // demo must never open external profiles.
   await noOverflow(page);
-  await page.screenshot({ path: `test-results/ui/${info.project.name}-profile.png`, fullPage: true, animations: 'disabled' });
+  await page.screenshot({ path: `test-results/ui/${info.project.name}-profile.png`, fullPage: false, animations: 'disabled' });
   expect(api.posts).toHaveLength(0); expect(api.errors).toEqual([]);
 });
 
@@ -125,5 +126,18 @@ test('long names aliases notes and handles fit desktop mobile and medium widths'
   const data = fixture(); data.people[0].name = '長い名前'.repeat(20); data.people[0].aliases = ['long_alias_'.repeat(7)]; data.people[0].tags = ['タグ'.repeat(30)]; data.people[0].notes = '長いメモと記録。'.repeat(100);
   const api = await start(page, data); await select(page, info, data.people[0].name); await noOverflow(page);
   if (!info.project.use.isMobile) { await page.setViewportSize({ width: 900, height: 900 }); await noOverflow(page); }
+  else {
+    await page.keyboard.press('Escape');
+    await page.setViewportSize({ width: 320, height: 844 });
+    await noOverflow(page);
+  }
+  expect(api.errors).toEqual([]);
+});
+
+test('unbroken Latin names wrap in mobile profile headers', async ({ page }, info) => {
+  const data = fixture(); data.people[0].name = 'L'.repeat(100);
+  const api = await start(page, data); await select(page, info, data.people[0].name);
+  await noOverflow(page);
+  if (info.project.use.isMobile) { await page.setViewportSize({ width: 320, height: 844 }); await noOverflow(page); }
   expect(api.errors).toEqual([]);
 });
