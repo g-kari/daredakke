@@ -88,6 +88,7 @@ export default function FriendRecord() {
     return (serviceFilter === 'all' || accounts.some(a => a.service === serviceFilter)) && match([p.name, ...p.aliases, ...p.tags, p.notes, ...accounts.flatMap(a => [a.label, a.url, a.service])]);
   });
   const desktopPerson = filteredPeople.find(p => p.id === selected) || filteredPeople[0];
+  useEffect(() => { setMergeTarget('none'); }, [desktopPerson?.id, person?.id]);
   const accountMatch = (a: Account) => (serviceFilter === 'all' || a.service === serviceFilter) && match([a.label, a.url, a.service, data.people.find(p => p.id === a.personId)?.name || '']);
   const peopleChoices = [{ value: 'none', label: '未整理のまま' }, ...data.people.map(p => ({ value: p.id, label: p.name }))];
   function clearSessionData(message = '') {

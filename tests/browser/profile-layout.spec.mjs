@@ -141,3 +141,19 @@ test('unbroken Latin names wrap in mobile profile headers', async ({ page }, inf
   if (info.project.use.isMobile) { await page.setViewportSize({ width: 320, height: 844 }); await noOverflow(page); }
   expect(api.errors).toEqual([]);
 });
+
+test('changing the displayed person resets an old merge choice', async ({ page }, info) => {
+  const api = await start(page); let profile = await select(page, info, 'そら');
+  await profile.locator('.record-maintenance>summary').click();
+  await profile.getByRole('combobox', { name: '統合する別の人' }).click();
+  await page.getByRole('option', { name: 'はく', exact: true }).click();
+  await expect(profile.getByRole('button', { name: 'この人に統合する', exact: true })).toBeEnabled();
+  if (info.project.use.isMobile) await page.keyboard.press('Escape');
+  await page.getByRole('textbox', { name: '記録を検索' }).fill('haku_demo');
+  profile = await select(page, info, 'はく');
+  const maintenance = profile.locator('.record-maintenance');
+  if (!await maintenance.evaluate(el => el.open)) await maintenance.locator('summary').click();
+  await expect(profile.getByRole('combobox', { name: '統合する別の人' })).toHaveText('統合する人を選ぶ');
+  await expect(profile.getByRole('button', { name: 'この人に統合する', exact: true })).toBeDisabled();
+  expect(api.posts).toHaveLength(0); expect(api.errors).toEqual([]);
+});
