@@ -92,7 +92,7 @@ test('Escape in the discard alert keeps editing; explicit discard clears, unchan
 
 test('account edits survive repeated dismissal and still save normally', async ({ page }) => {
   const api = await start(page);
-  await page.getByRole('button', { name: 'アカウント', exact: true }).click();
+  await page.getByRole('button', { name: 'アカウントを追加', exact: true }).click();
   await form(page).getByLabel('表示名', { exact: true }).fill('Synthetic account');
   await form(page).getByLabel('プロフィールURL / ID 必須', { exact: true }).fill('100000000000000001');
   for (const method of ['Escape', 'キャンセル', 'Close', 'Backdrop']) {
@@ -114,7 +114,7 @@ test('account edits survive repeated dismissal and still save normally', async (
 
 test('staged import JSON survives cancellation and explicit discard clears it', async ({ page }) => {
   const api = await start(page); const json = JSON.stringify({ format: 'daredakke', version: 1, data: blank() });
-  await page.getByRole('tab', { name: '連携・保存' }).click();
+  await page.getByRole('tab', { name: '保存・バックアップ' }).click();
   await page.getByRole('button', { name: 'JSONを読み込む', exact: true }).click();
   await form(page).getByRole('textbox', { name: 'JSON', exact: true }).fill(json);
   for (const method of ['Close', 'Escape', 'Backdrop']) {
@@ -168,20 +168,22 @@ test('discard confirmation fits the viewport and traps keyboard focus in the saf
 });
 
 
-test('editing from the person Sheet preserves the note and nested-modal focus', async ({ page }) => {
+test('profile editing preserves the note and nested-modal focus', async ({ page }, info) => {
   const data = { people: [{ id: 'synthetic-person', name: 'Synthetic saved friend', aliases: ['Fixture'], tags: ['test'], notes: 'Saved synthetic note', color: '#4f5fcb' }], accounts: [] };
   const api = await start(page, data);
   await page.getByRole('button', { name: 'Synthetic saved friendの記録を開く', exact: true }).click();
-  await form(page).getByRole('button', { name: '編集', exact: true }).click();
-  await form(page).getByRole('textbox', { name: 'メモ', exact: true }).fill('Edited synthetic note');
-  await dismiss(page, 'Escape'); await keep(page);
-  await expect(form(page).getByRole('textbox', { name: 'メモ', exact: true })).toHaveValue('Edited synthetic note');
-  await expect(form(page).getByRole('textbox', { name: 'メモ', exact: true })).toBeFocused();
-  await dismiss(page, 'キャンセル');
+  const profile = info.project.use.isMobile ? form(page) : page.getByRole('article', { name: 'Synthetic saved friendのプロフィール' });
+  await profile.getByRole('button', { name: '編集', exact: true }).click();
+  const editor = page.getByRole('dialog', { name: '人の記録を編集' });
+  await editor.getByRole('textbox', { name: 'メモ', exact: true }).fill('Edited synthetic note');
+  await page.keyboard.press('Escape'); await expect(alert(page)).toBeVisible(); await keep(page);
+  await expect(editor.getByRole('textbox', { name: 'メモ', exact: true })).toHaveValue('Edited synthetic note');
+  await expect(editor.getByRole('textbox', { name: 'メモ', exact: true })).toBeFocused();
+  await editor.getByRole('button', { name: 'キャンセル', exact: true }).click();
   await alert(page).getByRole('button', { name: '入力を破棄する', exact: true }).click();
-  await expect(alert(page)).toHaveCount(0);
-  await expect(form(page).getByText('Saved synthetic note', { exact: true })).toBeVisible();
-  await page.keyboard.press('Escape'); await expect(form(page)).toHaveCount(0);
+  await expect(alert(page)).toHaveCount(0); await expect(editor).toHaveCount(0);
+  await expect(profile.getByText('Saved synthetic note', { exact: true })).toBeVisible();
+  if (info.project.use.isMobile) { await page.keyboard.press('Escape'); await expect(form(page)).toHaveCount(0); }
   expect(api.posts).toHaveLength(0); expect(api.errors).toEqual([]);
 });
 
