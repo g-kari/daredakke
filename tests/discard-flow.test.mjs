@@ -25,7 +25,7 @@ function harness() {
   const context = {
     busy: false, scope: 'demo', personDirty: true, accountDirty: false, importDirty: false, hasUnsavedChanges: true,
     identityEpoch: { current: 4 }, importReadEpoch: { current: 8 }, sessionPending: { current: false },
-    personDraftInitial: { current: { name: '', aliases: '', tags: '', notes: '' } }, accountDraftInitial: { current: null }, discardFocus: { current: null },
+    personDraftInitial: { current: { name: '', aliases: '', tags: '', notes: '' } }, accountDraftInitial: { current: null }, draftFocus: { current: null }, discardFocus: { current: null },
     personDraft: draft, accountDraft: null, discard: null,
     document: { activeElement: null }, HTMLElement: class {}, personDraftChanged, accountDraftChanged,
     blankPerson: () => ({ name: '', aliases: '', tags: '', notes: '' }),
@@ -34,6 +34,7 @@ function harness() {
     const key = name[0].toLowerCase() + name.slice(1);
     context['set' + name] = value => { view[key] = value; context[key] = value; };
   }
+  context.clearDraftFocus = (...args) => callback(functions.get('clearDraftFocus'), context, 'clearDraftFocus')(...args);
   context.requestDiscard = (...args) => callback(functions.get('requestDiscard'), context, 'requestDiscard')(...args);
   const call = (name, ...args) => callback(functions.get(name), context, name)(...args);
   return { context, view, call, draft };
@@ -113,13 +114,65 @@ test('repeat requests coalesce while discard alert is open and retain the origin
   const h = harness();
   const input = new h.context.HTMLElement();
   const alertButton = new h.context.HTMLElement();
+  h.context.draftFocus.current = { kind: 'person', target: input, dialog: {}, epoch: 4 };
   h.context.document.activeElement = input;
   h.call('closePersonDraft');
   const first = h.view.discard;
   h.context.document.activeElement = alertButton;
   h.call('editPerson'); h.call('closePersonDraft'); h.call('switchScope', 'personal');
   assert.equal(h.view.discard, first);
-  assert.equal(h.context.discardFocus.current, input);
+  assert.equal(h.context.discardFocus.current.target, input);
   h.context.setDiscard(null); h.call('closePersonDraft'); h.call('discardChanges');
   assert.equal(h.view.personDraft, null);
+});
+
+function focusedDraft(h, kind = 'person') {
+  const dialog = new h.context.HTMLElement(), input = new h.context.HTMLElement();
+  dialog.isConnected = input.isConnected = true;
+  dialog.contains = target => target === input;
+  input.closest = () => dialog;
+  input.focus = () => { input.focused = true; };
+  h.call('rememberDraftFocus', kind, { target: input, currentTarget: dialog });
+  return { dialog, input };
+}
+test('backdrop body focus preserves the originating control and Keep Editing restores it', () => {
+  const h = harness(); const { input } = focusedDraft(h);
+  h.context.document.activeElement = new h.context.HTMLElement(); // Pointer moved focus to body.
+  h.call('closePersonDraft'); h.context.setDiscard(null);
+  const event = { prevented: false, preventDefault() { this.prevented = true; } };
+  h.call('restoreDiscardFocus', event);
+  assert.equal(event.prevented, true); assert.equal(input.focused, true);
+  assert.equal(h.context.discardFocus.current, null);
+});
+test('nested alert or portal focus cannot replace the remembered draft control', () => {
+  const h = harness(); const { dialog, input } = focusedDraft(h);
+  const nested = new h.context.HTMLElement(); nested.closest = () => new h.context.HTMLElement();
+  h.call('rememberDraftFocus', 'person', { target: nested, currentTarget: dialog });
+  h.call('rememberDraftFocus', 'person', { target: dialog, currentTarget: dialog });
+  assert.equal(h.context.draftFocus.current.target, input);
+});
+test('discard focus cannot return to an old identity, pending session, unmounted or different dialog', () => {
+  for (const transition of ['identity', 'session', 'dialog-unmounted', 'input-unmounted', 'moved-input', 'different-dialog']) {
+    const h = harness(); const { dialog, input } = focusedDraft(h);
+    h.call('closePersonDraft'); h.context.setDiscard(null);
+    if (transition === 'identity') h.context.identityEpoch.current++;
+    else if (transition === 'session') h.context.sessionPending.current = true;
+    else if (transition === 'dialog-unmounted') dialog.isConnected = false;
+    else if (transition === 'input-unmounted') input.isConnected = false;
+    else if (transition === 'moved-input') dialog.contains = () => false;
+    else input.closest = () => new h.context.HTMLElement();
+    const event = { prevented: false, preventDefault() { this.prevented = true; } };
+    h.call('restoreDiscardFocus', event);
+    assert.equal(event.prevented, false, transition); assert.equal(input.focused, undefined, transition);
+    assert.equal(h.context.discardFocus.current, null, transition);
+  }
+});
+test('only closing or replacing the originating draft clears its remembered and pending focus', () => {
+  for (const kind of ['person', 'account', 'import']) {
+    const h = harness(); focusedDraft(h, kind); h.call('requestDiscard', true, () => {});
+    h.call('clearDraftFocus', kind === 'person' ? 'account' : 'person');
+    assert.ok(h.context.draftFocus.current); assert.ok(h.context.discardFocus.current);
+    h.call('clearDraftFocus', kind);
+    assert.equal(h.context.draftFocus.current, null); assert.equal(h.context.discardFocus.current, null);
+  }
 });

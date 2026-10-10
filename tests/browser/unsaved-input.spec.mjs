@@ -62,18 +62,16 @@ async function discard(page) {
 test('Escape, Cancel, Close and backdrop preserve person input and return keyboard focus', async ({ page }, info) => {
   const api = await start(page); await person(page);
   for (const method of ['Escape', 'キャンセル', 'Close', 'Backdrop']) {
-    const original = await page.evaluate(() => {
-      const active = document.activeElement;
-      return active?.tagName === 'TEXTAREA' ? 'notes' : active?.textContent;
-    });
+    const notes = form(page).getByRole('textbox', { name: 'メモ', exact: true });
+    if (method === 'Escape' || method === 'Backdrop') await notes.focus();
     await dismiss(page, method);
     if (method === 'Escape') await info.attach('discard-confirmation', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
     await keep(page);
     await expect(form(page).getByRole('textbox', { name: 'メモ', exact: true })).toHaveValue('Unsaved synthetic note');
     // Escape/backdrop should restore the previously focused form control.
     if (method === 'Escape' || method === 'Backdrop') {
-      expect(await page.evaluate(() => document.activeElement?.closest('[role="dialog"]') !== null)).toBe(true);
-      if (original === 'notes') await expect(form(page).getByRole('textbox', { name: 'メモ', exact: true })).toBeFocused();
+      await expect(notes).toBeFocused();
+      expect(await page.evaluate(() => Boolean(document.activeElement?.closest('[role="dialog"]')))).toBe(true);
     }
   }
   expect(api.posts).toHaveLength(0); expect(api.errors).toEqual([]);
@@ -98,7 +96,10 @@ test('account edits survive repeated dismissal and still save normally', async (
   await form(page).getByLabel('表示名', { exact: true }).fill('Synthetic account');
   await form(page).getByLabel('プロフィールURL / ID 必須', { exact: true }).fill('100000000000000001');
   for (const method of ['Escape', 'キャンセル', 'Close', 'Backdrop']) {
+    const urlInput = form(page).getByLabel('プロフィールURL / ID 必須', { exact: true });
+    if (method === 'Escape' || method === 'Backdrop') await urlInput.focus();
     await dismiss(page, method); await keep(page);
+    if (method === 'Escape' || method === 'Backdrop') await expect(urlInput).toBeFocused();
     await expect(form(page).getByLabel('表示名', { exact: true })).toHaveValue('Synthetic account');
     await expect(form(page).getByLabel('プロフィールURL / ID 必須', { exact: true })).toHaveValue('100000000000000001');
   }
@@ -117,7 +118,10 @@ test('staged import JSON survives cancellation and explicit discard clears it', 
   await page.getByRole('button', { name: 'JSONを読み込む', exact: true }).click();
   await form(page).getByRole('textbox', { name: 'JSON', exact: true }).fill(json);
   for (const method of ['Close', 'Escape', 'Backdrop']) {
-    await dismiss(page, method); await keep(page); await expect(form(page).getByRole('textbox', { name: 'JSON', exact: true })).toHaveValue(json);
+    const jsonInput = form(page).getByRole('textbox', { name: 'JSON', exact: true });
+    if (method === 'Escape' || method === 'Backdrop') await jsonInput.focus();
+    await dismiss(page, method); await keep(page); await expect(jsonInput).toHaveValue(json);
+    if (method === 'Escape' || method === 'Backdrop') await expect(jsonInput).toBeFocused();
   }
   await dismiss(page, 'Escape'); await discard(page);
   await page.getByRole('button', { name: 'JSONを読み込む', exact: true }).click();
