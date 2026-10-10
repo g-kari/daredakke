@@ -49,7 +49,11 @@ test('B2-4 list and profile preserve actual content and global scope once', asyn
   await expect(page.getByRole('button', { name: 'JSONを読み込む', exact: true })).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'すべて', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await noOverflow(page);
-  if (!info.project.use.isMobile) expect((await page.locator('.app-header').boundingBox()).height).toBeLessThan(100);
+  if (!info.project.use.isMobile) {
+    expect((await page.locator('.app-header').boundingBox()).height).toBeLessThan(100);
+    expect(await page.locator('.person-row.selected').evaluate(el => getComputedStyle(el).boxShadow)).toBe('none');
+    expect(await page.locator('.person-row.selected').evaluate(el => getComputedStyle(el).borderLeftWidth)).toBe('0px');
+  }
   await mkdir('test-results/ui', { recursive: true });
   await page.screenshot({ path: `test-results/ui/${info.project.name}-list.png`, fullPage: true, animations: 'disabled' });
   const profile = await select(page, info, 'そら');
@@ -150,7 +154,7 @@ test('changing the displayed person resets an old merge choice', async ({ page }
   await expect(profile.getByRole('button', { name: 'この人に統合する', exact: true })).toBeEnabled();
   if (info.project.use.isMobile) await page.keyboard.press('Escape');
   await page.getByRole('textbox', { name: '記録を検索' }).fill('haku_demo');
-  profile = await select(page, info, 'はく');
+  profile = info.project.use.isMobile ? await select(page, info, 'はく') : page.getByRole('article', { name: 'はくのプロフィール' });
   const maintenance = profile.locator('.record-maintenance');
   if (!await maintenance.evaluate(el => el.open)) await maintenance.locator('summary').click();
   await expect(profile.getByRole('combobox', { name: '統合する別の人' })).toHaveText('統合する人を選ぶ');
