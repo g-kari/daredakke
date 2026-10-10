@@ -208,7 +208,10 @@ test('final cancellation and repeated dialog dismissal preserve the review and u
     for (const type of ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'click', 'dismissableLayer.pointerDownOutside']) {
       for (const capture of [true, false]) document.addEventListener(type, event => {
         window.__syntheticDismissalEvents.push({ type, capture, target: describe(event.target),
-          defaultPrevented: event.defaultPrevented, trusted: event.isTrusted, time: performance.now() });
+          defaultPrevented: event.defaultPrevented, trusted: event.isTrusted, time: performance.now(),
+          clientX: event.clientX ?? event.changedTouches?.[0]?.clientX,
+          clientY: event.clientY ?? event.changedTouches?.[0]?.clientY,
+          radiusX: event.changedTouches?.[0]?.radiusX, radiusY: event.changedTouches?.[0]?.radiusY });
         if (capture && type === 'dismissableLayer.pointerDownOutside') window.setTimeout(() => {
           window.__syntheticDismissalEvents.push({ type, phase: 'after-dispatch', target: describe(event.target),
             defaultPrevented: event.defaultPrevented, time: performance.now() });
@@ -227,9 +230,17 @@ test('final cancellation and repeated dialog dismissal preserve the review and u
     if (method === 'Escape') await page.keyboard.press('Escape');
     else if (method === 'Close') await form(page).getByRole('button', { name: 'Close', exact: true }).click();
     else {
-      expect(await page.evaluate(() => document.elementFromPoint(10, 10)?.getAttribute('data-slot'))).toBe('dialog-overlay');
-      if (info.project.use.hasTouch) await page.touchscreen.tap(10, 10);
-      else await page.mouse.click(10, 10);
+      // Chromium expands a touch point by up to16px per axis. A point6px
+      // outside the dialog can snap inside; use the corner beyond that area.
+      const bounds = await form(page).boundingBox();
+      expect(bounds.x).toBeGreaterThanOrEqual(16); expect(bounds.y).toBeGreaterThanOrEqual(16);
+      expect(await page.evaluate(() => document.elementFromPoint(0, 0)?.getAttribute('data-slot'))).toBe('dialog-overlay');
+      if (info.project.use.hasTouch) {
+        await page.touchscreen.tap(0, 0);
+        for (const type of ['pointerdown', 'touchstart']) expect(await page.evaluate(type =>
+          window.__syntheticDismissalEvents.filter(event => event.type === type && event.capture && event.trusted).at(-1)?.target.slot,
+        type)).toBe('dialog-overlay');
+      } else await page.mouse.click(0, 0);
     }
     await expect(alert(page).getByRole('heading', { name: '保存していない入力を破棄しますか？', exact: true })).toBeVisible();
     await alert(page).getByRole('button', { name: '編集を続ける', exact: true }).click();
