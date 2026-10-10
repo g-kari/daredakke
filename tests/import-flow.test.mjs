@@ -23,14 +23,14 @@ function harness(incoming = demoData()) {
     state: original, data: original.data, revision: 4, namespace, scope: 'demo', busy: false, importFilePending: false,
     importReview: null, importSource: '貼り付けたJSON', importText: exportData(incoming), emptyImportConfirmed: false,
     stateRef: { current: original }, namespaceRef: { current: namespace }, identityEpoch: { current: 2 }, importReadEpoch: { current: 5 },
-    sessionPending: { current: false }, confirmationRef: { current: null }, inputFile: { current: { value: '' } }, importConfirmationFocus: { current: null },
+    sessionPending: { current: false }, confirmationRef: { current: null }, inputFile: { current: { value: '' } }, importConfirmationFocus: { current: null }, importSessionFocus: { current: null }, discardFocus: { current: null },
     importConfirmButton: { current: null }, importReviewHeading: { current: null }, importTextInput: { current: null },
     buildImportReview, parseImport, readSessionFile,
     clearDraftFocus: () => {}, toast: { error: message => toasts.push(message) },
     requestAnimationFrame: fn => fn(),
     update: async (data, label) => { writes.push({ data, label }); return context.saveResult ?? true; },
   };
-  for (const name of ['ImportText', 'ImportReview', 'ImportSource', 'ImportFilePending', 'EmptyImportConfirmed', 'FormError', 'ImportOpen', 'Confirmation', 'Selected']) {
+  for (const name of ['ImportConfirmationInterrupted', 'Discard', 'ImportText', 'ImportReview', 'ImportSource', 'ImportFilePending', 'EmptyImportConfirmed', 'FormError', 'ImportOpen', 'Confirmation', 'Selected']) {
     const key = name[0].toLowerCase() + name.slice(1); context['set' + name] = value => { context[key] = value; view[key] = value; if (name === 'Confirmation') context.confirmationRef.current = value; };
   }
   return { context, view, writes, toasts, original, call: (name, ...args) => callback(name, context)(...args) };
@@ -133,4 +133,11 @@ test('same-owner session interruption retains focus intent and restores remounte
   h.call('restoreImportConfirmationFocus', { preventDefault: () => prevented++ }); assert.equal(h.context.importConfirmationFocus.current, intent, 'temporary cleanup after fast probe cannot consume intent while alert remains logically open');
   h.context.setConfirmation(null);
   h.call('restoreImportConfirmationFocus', { preventDefault: () => prevented++ }); assert.equal(newFocus, 1); assert.equal(oldFocus, 0); assert.equal(prevented, 1);
+});
+test('session verification cancels nested final confirmation while preserving current review/text', () => {
+  const h = harness(); h.context.importConfirmButton.current = { isConnected: true }; h.call('stageImport'); const review = h.view.importReview, text = h.context.importText;
+  h.call('confirmImport'); h.context.setDiscard({ run: () => {} }); h.context.discardFocus.current = { stale: true }; h.call('pauseConfirmationsForSession');
+  assert.equal(h.view.confirmation, null); assert.equal(h.view.discard, null); assert.equal(h.context.discardFocus.current, null);
+  assert.equal(h.view.importReview, review); assert.equal(h.context.importText, text); assert.equal(h.view.importConfirmationInterrupted, true);
+  assert.deepEqual(h.context.importSessionFocus.current, { epoch: 2, namespace }); assert.equal(h.context.importConfirmationFocus.current, null); assert.deepEqual(h.writes, []);
 });

@@ -63,6 +63,7 @@ export default function FriendRecord() {
   const [importSource, setImportSource] = useState('貼り付けたJSON');
   const [importFilePending, setImportFilePending] = useState(false);
   const [emptyImportConfirmed, setEmptyImportConfirmed] = useState(false);
+  const [importConfirmationInterrupted, setImportConfirmationInterrupted] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
@@ -84,6 +85,7 @@ export default function FriendRecord() {
   const importTextInput = useRef<HTMLTextAreaElement>(null);
   const importConfirmButton = useRef<HTMLButtonElement>(null);
   const importConfirmationFocus = useRef<{ target: HTMLButtonElement; epoch: number; readEpoch: number; namespace: string } | null>(null);
+  const importSessionFocus = useRef<{ epoch: number; namespace: string } | null>(null);
   const personDirty = personDraftChanged(personDraft, personDraftInitial.current);
   const accountDirty = accountDraftChanged(accountDraft, accountDraftInitial.current);
   const importDirty = importOpen && !!importText.trim();
@@ -106,6 +108,7 @@ export default function FriendRecord() {
     identityEpoch.current++;
     importReadEpoch.current++;
     importConfirmationFocus.current = null;
+    importSessionFocus.current = null; setImportConfirmationInterrupted(false);
     sessionPending.current = false; setCheckingSession(false);
     stateRef.current = null; namespaceRef.current = null;
     setState(null); setNamespace(null); setRevision(0); setSelected(null);
@@ -158,11 +161,20 @@ export default function FriendRecord() {
     requestDiscard(importDirty, () => { clearDraftFocus('import'); importReadEpoch.current++; setImportOpen(false); setImportText(''); setImportReview(null); setImportSource('貼り付けたJSON'); setImportFilePending(false); setEmptyImportConfirmed(false); setFormError(''); });
   }
   useEffect(() => { if (importReview) importReviewHeading.current?.focus(); }, [importReview]);
+  useEffect(() => {
+    if (checkingSession || !importSessionFocus.current) return;
+    const focus = importSessionFocus.current; importSessionFocus.current = null;
+    const frame = requestAnimationFrame(() => {
+      if (focus.epoch !== identityEpoch.current || focus.namespace !== namespaceRef.current || sessionPending.current || !importConfirmButton.current?.isConnected) return;
+      if (!importConfirmButton.current.disabled) importConfirmButton.current.focus(); else importReviewHeading.current?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [checkingSession]);
   useEffect(() => { if (importReview && importReview.baseline !== state) { setImportReview(null); setEmptyImportConfirmed(false); } }, [state, importReview]);
   function editImportText(value: string) {
     importReadEpoch.current++;
     if (inputFile.current) inputFile.current.value = '';
-    setImportText(value); setImportSource('貼り付けたJSON'); setImportReview(null); setImportFilePending(false); setEmptyImportConfirmed(false); setFormError('');
+    setImportText(value); setImportSource('貼り付けたJSON'); setImportReview(null); setImportFilePending(false); setEmptyImportConfirmed(false); setImportConfirmationInterrupted(false); setFormError('');
   }
   function editImportPreview() {
     const epoch = identityEpoch.current;
@@ -180,6 +192,15 @@ export default function FriendRecord() {
     event.preventDefault();
     if (!target.disabled) target.focus();
     else importReviewHeading.current?.focus();
+  }
+  function pauseConfirmationsForSession() {
+    const focus = importConfirmationFocus.current;
+    if (focus && focus.epoch === identityEpoch.current && focus.namespace === namespaceRef.current) {
+      importSessionFocus.current = { epoch: focus.epoch, namespace: focus.namespace }; setImportConfirmationInterrupted(true);
+    }
+    // Keep the existing private-UI unmount during verification, but never remount
+    // nested destructive dialogs automatically. The draft/review stays intact.
+    importConfirmationFocus.current = null; setConfirmation(null); setDiscard(null); discardFocus.current = null;
   }
   function switchScope(next: 'demo' | 'personal') {
     if (next === scope) return;
@@ -213,6 +234,7 @@ export default function FriendRecord() {
       if (!expected) { recordLoad.current?.abort(); clearSessionData('読み込み中に表示状態が変わりました。再読み込みしてログインを確認してください。'); }
       const epoch = identityEpoch.current;
       sessionPending.current = true; setCheckingSession(true);
+      pauseConfirmationsForSession();
       try {
         const response = await fetch('/api/session', { cache: 'no-store', signal: operation.signal });
         const result = await response.json();
@@ -294,7 +316,7 @@ export default function FriendRecord() {
     if (!file || busy || sessionPending.current || !namespace || namespace !== namespaceRef.current) return;
     const expected = namespace, epoch = identityEpoch.current, readEpoch = ++importReadEpoch.current;
     const isCurrent = () => expected === namespaceRef.current && epoch === identityEpoch.current && readEpoch === importReadEpoch.current;
-    setImportReview(null); setEmptyImportConfirmed(false);
+    setImportReview(null); setEmptyImportConfirmed(false); setImportConfirmationInterrupted(false);
     if (file.size > 900000) { setImportFilePending(false); toast.error('JSONファイルは900KBまでです。'); if (inputFile.current) inputFile.current.value = ''; return; }
     setImportFilePending(true);
     try {
@@ -308,7 +330,7 @@ export default function FriendRecord() {
     if (busy || importFilePending || sessionPending.current || !state || !namespace || namespace !== namespaceRef.current) return;
     try {
       const review = buildImportReview(data, importText);
-      setImportReview({ review, text: importText, source: importSource, baseline: state, revision, namespace, epoch: identityEpoch.current, readEpoch: importReadEpoch.current }); setEmptyImportConfirmed(false); setFormError('');
+      setImportReview({ review, text: importText, source: importSource, baseline: state, revision, namespace, epoch: identityEpoch.current, readEpoch: importReadEpoch.current }); setEmptyImportConfirmed(false); setImportConfirmationInterrupted(false); setFormError('');
     } catch (e) { setImportReview(null); setEmptyImportConfirmed(false); setFormError((e as Error).message); }
   }
   function confirmImport() {
@@ -396,7 +418,7 @@ export default function FriendRecord() {
     <Dialog open={importOpen} onOpenChange={open => { if (!open) closeImport(); }}><DialogContent className="record-dialog import-dialog" onFocusCapture={event => rememberDraftFocus('import', event)}>
       <DialogHeader><DialogTitle>JSONを読み込む</DialogTitle><DialogDescription>version 1 のだれだっけJSONを選ぶか、貼り付けてください。{scope === 'demo' ? 'デモ' : 'マイレコード'}だけが対象です。</DialogDescription></DialogHeader>
       <Button variant="outline" disabled={busy} onClick={() => inputFile.current?.click()}><FileJson />ファイルを選ぶ</Button>
-      <label className="form-label">JSON<Textarea ref={importTextInput} disabled={busy} rows={importReview ? 3 : 8} maxLength={900000} value={importText} onChange={e => editImportText(e.target.value)} spellCheck={false} /></label>
+      <label className="form-label">JSON<Textarea className="import-json-input" ref={importTextInput} disabled={busy} rows={importReview ? 3 : 8} maxLength={900000} value={importText} onChange={e => editImportText(e.target.value)} spellCheck={false} /></label>
       <p className="small-note">今の記録に追加するのではなく、保存先全体を置き換えます。直前の状態を履歴に残します。900KBまで。</p>
       {importFilePending && <p role="status" className="small-note">ファイルを読み込んでいます…</p>}
       {formError && <p className="form-error" role="alert">{formError}</p>}
@@ -409,6 +431,7 @@ export default function FriendRecord() {
         <div className="import-notices"><p>読み込み後の未整理アカウント: {importReview.review.unresolved}件</p><p>読み込み後の重複候補: {importReview.review.duplicateGroups}組（{importReview.review.duplicateAccounts}アカウント）</p><p className="small-note">未整理や重複候補は自動で紐づけ・統合しません。</p></div>
         {importReview.review.empty && <div className="import-empty-warning"><p role="alert">読み込み後は0人・0アカウントです。この保存先の今の記録がすべて取り除かれます。</p><label><input type="checkbox" disabled={busy} checked={emptyImportConfirmed} onChange={e => setEmptyImportConfirmed(e.target.checked)} />この保存先の記録を空にすることを確認しました</label></div>}
         <p className="small-note">まだ保存していません。次の確認で置き換えを実行します。もう一方の保存先には影響しません。戻せるのは直近10操作で、長期の保管には先にJSONを書き出してください。</p>
+        {importConfirmationInterrupted && <p className="small-note" role="status">ログイン確認で置き換えの確認を中断しました。内容を確かめてから、もう一度進んでください。</p>}
         <div className="form-actions import-actions"><Button variant="outline" disabled={busy} onClick={editImportPreview}>JSONの編集に戻る</Button><Button ref={importConfirmButton} onClick={confirmImport} disabled={busy || importFilePending || (importReview.review.empty && !emptyImportConfirmed)}>置き換えを確認する</Button></div>
       </section>}
     </DialogContent></Dialog>

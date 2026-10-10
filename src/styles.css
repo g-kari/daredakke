@@ -178,7 +178,9 @@ a { color:#cab4ec; } svg { flex-shrink:0; }
 .record-form label:has(.required) { position:relative; } .required { position:absolute; top:0; right:0; font-size:.75rem; font-weight:400; color:#c7bac6; }
 .record-form .choice { width:100%; } .small-note { color:#b9bac4; font-size:.75rem; line-height:1.85; font-weight:400; }
 .form-actions { display:flex; justify-content:flex-end; gap:12px; padding-top:5px; }
-.import-dialog { max-width:640px!important; }
+.import-dialog { width:calc(100vw - 32px); max-width:640px!important; grid-template-columns:minmax(0,1fr); }
+.import-dialog>*,.import-dialog .form-label { min-width:0; }
+.import-json-input { field-sizing:fixed; min-width:0; max-width:100%; max-height:220px; overflow:auto; }
 .import-review { display:grid; gap:16px; min-width:0; }
 .import-review h3 { font-size:1rem; font-weight:650; }
 .import-provenance { color:var(--muted-foreground); font-size:.8125rem; line-height:1.8; overflow-wrap:anywhere; }

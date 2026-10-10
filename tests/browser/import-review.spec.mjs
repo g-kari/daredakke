@@ -386,16 +386,14 @@ test('a session check pauses review actions and a changed owner clears the final
   await expect(page.getByRole('status')).toHaveText('ログインを確認しています…');
   await expect(finalButton(page)).toHaveCount(0);
   api.sessionGate.resolve(); api.sessionGate = null;
-  await expect(finalButton(page)).toBeEnabled();
-  await alert(page).getByRole('button', { name: 'キャンセル', exact: true }).click();
-  await expect(alert(page)).toHaveCount(0); await expect(confirmButton(page)).toBeFocused();
+  await expect(review(page)).toBeVisible(); await expect(alert(page)).toHaveCount(0);
+  await expect(confirmButton(page)).toBeFocused();
+  await expect(review(page).getByRole('status')).toContainText('中断しました');
   // Also cover a fast same-owner response, which can precede Radix's deferred cleanup.
   await finalConfirmation(page); const completed = api.sessionCompleted;
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await expect.poll(() => api.sessionCompleted).toBeGreaterThan(completed);
-  await expect(finalButton(page)).toBeEnabled();
-  await alert(page).getByRole('button', { name: 'キャンセル', exact: true }).click();
-  await expect(alert(page)).toHaveCount(0); await expect(confirmButton(page)).toBeFocused();
+  await expect(review(page)).toBeVisible(); await expect(alert(page)).toHaveCount(0); await expect(confirmButton(page)).toBeFocused();
   await finalConfirmation(page);
   api.namespace = namespaceB; await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await expect(page.getByRole('alert').filter({ hasText: 'ログイン' })).toBeVisible();
