@@ -33,6 +33,7 @@ function harness(namespace = null) {
   const context = {
     scope: 'demo', namespace,
     identityEpoch: { current: 0 }, importReadEpoch: { current: 0 },
+    personDraftInitial: { current: null }, accountDraftInitial: { current: null }, discardFocus: { current: null },
     namespaceRef: { current: namespace }, stateRef: { current: null },
     sessionPending: { current: false }, recordLoad: { current: null },
     inputFile: { current: { value: '' } },
@@ -42,7 +43,7 @@ function harness(namespace = null) {
     fetch: (url, options) => { const pending = deferred(); requests.push({ url, options, ...pending }); return pending.promise; },
     toast: { error: () => { view.toasts = (view.toasts ?? 0) + 1; } },
   };
-  for (const name of ['State', 'Namespace', 'Revision', 'Selected', 'PersonDraft', 'AccountDraft', 'Confirmation', 'ImportText', 'ImportOpen', 'ExportOpen', 'Copied', 'Query', 'ServiceFilter', 'MergeTarget', 'FormError', 'Error', 'CheckingSession']) {
+  for (const name of ['State', 'Namespace', 'Revision', 'Selected', 'PersonDraft', 'AccountDraft', 'Confirmation', 'Discard', 'ImportText', 'ImportOpen', 'ExportOpen', 'Copied', 'Query', 'ServiceFilter', 'MergeTarget', 'FormError', 'Error', 'CheckingSession']) {
     const key = name[0].toLowerCase() + name.slice(1);
     context['set' + name] = value => { view[key] = value; };
   }
@@ -90,6 +91,10 @@ test('actual overlapping focus probes supersede old responses and keep the priva
   const h = harness(A);
   h.view.state = { syntheticNote: 'A-only' };
   h.view.personDraft = { notes: 'A-only draft' };
+  h.context.personDraftInitial.current = { notes: 'A-only original' };
+  h.context.accountDraftInitial.current = { label: 'A-only account' };
+  h.context.discardFocus.current = { id: 'A-only input' };
+  h.view.discard = { epoch: 0, run: () => { throw new Error('Old discard must never execute'); } };
   const stop = callback(monitorNode, h.context)();
   const first = h.windowEvents.get('focus')();
   const second = h.documentEvents.get('visibilitychange')();
@@ -104,6 +109,10 @@ test('actual overlapping focus probes supersede old responses and keep the priva
   await second;
   assert.equal(h.view.state, null);
   assert.equal(h.view.personDraft, null);
+  assert.equal(h.context.personDraftInitial.current, null);
+  assert.equal(h.context.accountDraftInitial.current, null);
+  assert.equal(h.context.discardFocus.current, null);
+  assert.equal(h.view.discard, null);
   assert.equal(h.context.sessionPending.current, false);
   assert.equal(h.view.checkingSession, false);
   stop();

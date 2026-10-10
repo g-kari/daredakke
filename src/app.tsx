@@ -12,11 +12,10 @@ import { AlertDialog, AlertDialogContent, AlertDialogTitle, AlertDialogDescripti
 import { Skeleton } from '@/components/ui/skeleton';
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
+import { type PersonDraft, type AccountDraft, personDraftChanged, accountDraftChanged } from '@/lib/drafts';
 import { identityChanged, readNamespace, readSessionFile, verifyLoadedNamespace, sessionChecks } from '@/lib/session';
 import { type Person, type Account, type Service, type Data, type RecordState, colors, demoData, empty, normalizeAccount, validateData, change, undoChange, mergePeople, duplicateGroups, parseImport, exportData } from '@/domain/records';
 
-type PersonDraft = { id?: string; name: string; aliases: string; tags: string; notes: string };
-type AccountDraft = { id?: string; service: Service; label: string; url: string; personId: string };
 type Confirm = { title: string; message: string; action: string; run: () => Promise<void> };
 const blankPerson = (): PersonDraft => ({ name: '', aliases: '', tags: '', notes: '' });
 const split = (value: string) => value.split(/[,、\n]/).map(v => v.trim()).filter(Boolean);
@@ -41,12 +40,17 @@ export default function FriendRecord() {
   const [accountDraft, setAccountDraft] = useState<AccountDraft | null>(null);
   const [formError, setFormError] = useState('');
   const [confirmation, setConfirmation] = useState<Confirm | null>(null);
+  const [discard, setDiscard] = useState<{ run: () => void; epoch: number } | null>(null);
   const [mergeTarget, setMergeTarget] = useState('none');
   const [importText, setImportText] = useState('');
   const [importOpen, setImportOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const personDraftInitial = useRef<PersonDraft | null>(null);
+  const accountDraftInitial = useRef<AccountDraft | null>(null);
+  const discardFocus = useRef<HTMLElement | null>(null);
+  const startPersonCreation = useRef<() => void>(() => {}); startPersonCreation.current = () => editPerson();
   const stateRef = useRef(state); stateRef.current = state;
   const namespaceRef = useRef<string | null>(null);
   const identityEpoch = useRef(0);
@@ -54,6 +58,10 @@ export default function FriendRecord() {
   const sessionPending = useRef(false);
   const recordLoad = useRef<AbortController | null>(null);
   const inputFile = useRef<HTMLInputElement>(null);
+  const personDirty = personDraftChanged(personDraft, personDraftInitial.current);
+  const accountDirty = accountDraftChanged(accountDraft, accountDraftInitial.current);
+  const importDirty = importOpen && !!importText.trim();
+  const hasUnsavedChanges = personDirty || accountDirty || importDirty;
   const data = state?.data || empty();
   const person = data.people.find(p => p.id === selected);
   const unresolved = data.accounts.filter(a => a.personId === null);
@@ -72,10 +80,41 @@ export default function FriendRecord() {
     sessionPending.current = false; setCheckingSession(false);
     stateRef.current = null; namespaceRef.current = null;
     setState(null); setNamespace(null); setRevision(0); setSelected(null);
-    setPersonDraft(null); setAccountDraft(null); setConfirmation(null);
+    personDraftInitial.current = null; accountDraftInitial.current = null; discardFocus.current = null;
+    setPersonDraft(null); setAccountDraft(null); setConfirmation(null); setDiscard(null);
     setImportText(''); setImportOpen(false); setExportOpen(false); setCopied(false);
     setQuery(''); setServiceFilter('all'); setMergeTarget('none'); setFormError(''); setError(message);
     if (inputFile.current) inputFile.current.value = '';
+  }
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [hasUnsavedChanges]);
+  function requestDiscard(dirty: boolean, run: () => void) {
+    if (busy || sessionPending.current || discard) return;
+    if (!dirty) { run(); return; }
+    discardFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setDiscard({ run, epoch: identityEpoch.current });
+  }
+  function closePersonDraft() {
+    requestDiscard(personDirty, () => { setPersonDraft(null); personDraftInitial.current = null; setFormError(''); });
+  }
+  function closeAccountDraft() {
+    requestDiscard(accountDirty, () => { setAccountDraft(null); accountDraftInitial.current = null; setFormError(''); });
+  }
+  function closeImport() {
+    requestDiscard(importDirty, () => { importReadEpoch.current++; setImportOpen(false); setImportText(''); setFormError(''); });
+  }
+  function switchScope(next: 'demo' | 'personal') {
+    if (next === scope) return;
+    requestDiscard(hasUnsavedChanges, () => { setScope(next); setQuery(''); });
+  }
+  function discardChanges() {
+    const pending = discard;
+    setDiscard(null);
+    if (pending && pending.epoch === identityEpoch.current && !sessionPending.current) pending.run();
   }
   useEffect(() => {
     const ctrl = new AbortController(); clearSessionData();
@@ -127,7 +166,7 @@ export default function FriendRecord() {
       } },
       { name: 'start_person_creation', title: '人の追加を開く', description: '人を追加する入力画面を開きます。保存はユーザーが画面で行います。', inputSchema: { type: 'object', properties: {}, additionalProperties: false }, annotations: { readOnlyHint: false, untrustedContentHint: false }, execute: (input: unknown) => {
         if (sessionPending.current) throw new Error('ログイン確認中です。');
-        if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length) throw new Error('入力は空のオブジェクトです。'); setFormError(''); setPersonDraft(blankPerson()); return { opened: 'person_creation' };
+        if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length) throw new Error('入力は空のオブジェクトです。'); startPersonCreation.current(); return { opened: 'person_creation' };
       } },
     ];
     tools.forEach(tool => { try { void Promise.resolve(ctx.registerTool(tool, { signal: life.signal })).catch(() => {}); } catch {} });
@@ -148,20 +187,26 @@ export default function FriendRecord() {
     finally { setBusy(false); }
   }
   async function update(next: Data, label: string) { if (!state) return false; try { return await save(change(state, next, label), label); } catch (e) { const msg = (e as Error).message; setFormError(msg); toast.error(msg); return false; } }
-  function editPerson(p?: Person) { setFormError(''); setPersonDraft(p ? { id: p.id, name: p.name, aliases: p.aliases.join(', '), tags: p.tags.join(', '), notes: p.notes } : blankPerson()); }
-  function editAccount(a?: Account, owner?: string) { setFormError(''); setAccountDraft(a ? { ...a, personId: a.personId || 'none' } : { service: 'Discord', label: '', url: '', personId: owner || 'none' }); }
+  function editPerson(p?: Person) {
+    const draft = p ? { id: p.id, name: p.name, aliases: p.aliases.join(', '), tags: p.tags.join(', '), notes: p.notes } : blankPerson();
+    requestDiscard(personDraftChanged(personDraft, personDraftInitial.current), () => { setFormError(''); personDraftInitial.current = draft; setPersonDraft(draft); });
+  }
+  function editAccount(a?: Account, owner?: string) {
+    const draft: AccountDraft = a ? { ...a, personId: a.personId || 'none' } : { service: 'Discord', label: '', url: '', personId: owner || 'none' };
+    requestDiscard(accountDraftChanged(accountDraft, accountDraftInitial.current), () => { setFormError(''); accountDraftInitial.current = draft; setAccountDraft(draft); });
+  }
   async function submitPerson(e: FormEvent) {
     e.preventDefault(); if (!personDraft) return;
     const draft = personDraft, old = data.people.find(p => p.id === draft.id);
     const next: Person = { id: draft.id || crypto.randomUUID(), name: draft.name.trim(), aliases: old && draft.aliases === old.aliases.join(', ') ? old.aliases : split(draft.aliases), tags: old && draft.tags === old.tags.join(', ') ? old.tags : split(draft.tags), notes: draft.notes, color: old?.color || colors[data.people.length % colors.length] };
-    if (await update({ ...data, people: old ? data.people.map(p => p.id === old.id ? next : p) : [...data.people, next] }, old ? '人の記録を更新しました' : '人を追加しました')) { setPersonDraft(null); setSelected(next.id); }
+    if (await update({ ...data, people: old ? data.people.map(p => p.id === old.id ? next : p) : [...data.people, next] }, old ? '人の記録を更新しました' : '人を追加しました')) { personDraftInitial.current = null; setPersonDraft(null); setSelected(next.id); }
   }
   async function submitAccount(e: FormEvent) {
     e.preventDefault(); if (!accountDraft) return;
     try {
       const normalized = normalizeAccount(accountDraft.service, accountDraft.url);
       const next: Account = { id: accountDraft.id || crypto.randomUUID(), service: accountDraft.service, label: accountDraft.label.trim() || normalized.key.split(':')[1], personId: accountDraft.personId === 'none' ? null : accountDraft.personId, ...normalized };
-      if (await update({ ...data, accounts: accountDraft.id ? data.accounts.map(a => a.id === accountDraft.id ? next : a) : [...data.accounts, next] }, accountDraft.id ? 'アカウントを更新しました' : 'アカウントを追加しました')) setAccountDraft(null);
+      if (await update({ ...data, accounts: accountDraft.id ? data.accounts.map(a => a.id === accountDraft.id ? next : a) : [...data.accounts, next] }, accountDraft.id ? 'アカウントを更新しました' : 'アカウントを追加しました')) { accountDraftInitial.current = null; setAccountDraft(null); }
     } catch (e) { setFormError((e as Error).message); }
   }
   async function link(a: Account, target: string) { await update({ ...data, accounts: data.accounts.map(c => c.id === a.id ? { ...c, personId: target === 'none' ? null : target } : c) }, target === 'none' ? '紐づけを解除しました' : 'アカウントを紐づけました'); }
@@ -209,7 +254,7 @@ export default function FriendRecord() {
     <a className="skip-link" href="#main">メインへ移動</a>
     <header className="app-header"><div className="brand"><span className="brand-icon"><Users size={24} /></span><h1>だれだっけ</h1><span className="prototype-label">試作</span></div><div className="private-label"><LockKeyhole size={15} /> 本人専用</div></header>
     <main id="main" className="main">
-      <div className="workspace-bar"><div className="scope-switch" role="group" aria-label="保存先"><Button variant={scope === 'demo' ? 'default' : 'ghost'} onClick={() => { setScope('demo'); setQuery(''); }} disabled={busy || !state && !error}><FlaskConical size={16} />デモ</Button><Button variant={scope === 'personal' ? 'default' : 'ghost'} onClick={() => { setScope('personal'); setQuery(''); }} disabled={busy || !state && !error}><UserRound size={16} />マイレコード</Button></div><div className="save-tools"><span className="save-status" role="status">{busy ? <><LoaderCircle className="spin" size={15} />保存中</> : state ? <><ShieldCheck size={15} />保存済み</> : '読み込み中'}</span><Button variant="outline" onClick={() => { if (state) void save(undoChange(state), '直前の操作を元に戻しました'); }} disabled={busy || !state?.undo.length} title={state?.undo[0]?.label}><Undo2 />元に戻す</Button></div></div>
+      <div className="workspace-bar"><div className="scope-switch" role="group" aria-label="保存先"><Button variant={scope === 'demo' ? 'default' : 'ghost'} onClick={() => switchScope('demo')} disabled={busy || !state && !error}><FlaskConical size={16} />デモ</Button><Button variant={scope === 'personal' ? 'default' : 'ghost'} onClick={() => switchScope('personal')} disabled={busy || !state && !error}><UserRound size={16} />マイレコード</Button></div><div className="save-tools"><span className="save-status" role="status">{busy ? <><LoaderCircle className="spin" size={15} />保存中</> : state ? <><ShieldCheck size={15} />保存済み</> : '読み込み中'}</span><Button variant="outline" onClick={() => { if (state) void save(undoChange(state), '直前の操作を元に戻しました'); }} disabled={busy || !state?.undo.length} title={state?.undo[0]?.label}><Undo2 />元に戻す</Button></div></div>
       {scope === 'demo' ? <div className="scope-notice"><FlaskConical size={18} /><p><strong>架空データで試す</strong>　ここでの操作はマイレコードと分かれています。サンプルURLは外部へ開きません。</p></div> : <div className="scope-notice personal"><LockKeyhole size={18} /><p><strong>マイレコード</strong>　この本人専用サイトに保存されます。パスワード・トークンは登録しないでください。</p></div>}
       {error && <div className="error-banner" role="alert"><p>{error}</p><Button variant="outline" onClick={() => setReloadKey(k => k + 1)} disabled={busy}>再読み込み</Button></div>}
       <Tabs value={tab} onValueChange={setTab} className="workspace-tabs">
@@ -234,10 +279,11 @@ export default function FriendRecord() {
       <footer><LockKeyhole size={14} /><span>本人専用 / 外部サービス未接続</span><span>直近10操作を元に戻せます</span></footer>
     </main>
     <Sheet open={!!person} onOpenChange={open => { if (!open) setSelected(null); }}><SheetContent className="person-sheet"><SheetHeader><SheetTitle>{person?.name || '人の記録'}</SheetTitle><SheetDescription>別名・メモ・アカウントをこの人にまとめる</SheetDescription></SheetHeader>{person && <div className="sheet-body"><div className="detail-name"><span className="initial" style={{ background: person.color }}>{person.name.slice(0, 1)}</span><div><h2>{person.name}</h2><p>{person.aliases.join(' / ') || '別名なし'}</p></div><Button variant="outline" onClick={() => editPerson(person)} disabled={busy}><Pencil />編集</Button></div><div className="tags">{person.tags.map(tag => <span key={tag}>{tag}</span>)}</div><section className="detail-section"><h3>メモ</h3><p className="detail-notes">{person.notes || 'メモはまだありません'}</p></section><section className="detail-section"><div className="section-head"><h3>アカウント</h3><Button variant="outline" onClick={() => editAccount(undefined, person.id)} disabled={busy}><Plus />追加</Button></div>{data.accounts.filter(a => a.personId === person.id).map(a => accountRow(a))}{!data.accounts.some(a => a.personId === person.id) && <p className="muted">まだ紐づいていません</p>}</section><section className="detail-section merge-section"><h3>別の人の記録と統合</h3><p>同じ人だと自分で確認できた記録を選びます。</p><Choice label="統合する別の人" value={mergeTarget} onChange={setMergeTarget} items={[{ value: 'none', label: '統合する人を選ぶ' }, ...data.people.filter(p => p.id !== person.id).map(p => ({ value: p.id, label: p.name }))]} disabled={busy} /><Button variant="outline" disabled={busy || mergeTarget === 'none'} onClick={() => confirmMerge(person.id, mergeTarget)}><GitMerge />この人に統合する</Button></section><Button variant="ghost" className="danger-text" disabled={busy} onClick={() => removePerson(person)}><Trash2 />人の記録を削除</Button></div>}</SheetContent></Sheet>
-    <Dialog open={!!personDraft} onOpenChange={open => { if (!open && !busy) setPersonDraft(null); }}><DialogContent className="record-dialog"><DialogHeader><DialogTitle>{personDraft?.id ? '人の記録を編集' : '人を追加'}</DialogTitle><DialogDescription>{scope === 'demo' ? 'デモ保存先への登録です。' : 'マイレコードへの登録です。'} 呼びやすい名前でまとめておけます。</DialogDescription></DialogHeader>{personDraft && <form onSubmit={e => void submitPerson(e)} className="record-form"><label>名前 <span className="required">必須</span><Input disabled={busy} autoFocus required maxLength={100} value={personDraft.name} onChange={e => setPersonDraft({ ...personDraft, name: e.target.value })} placeholder="いつも呼んでいる名前" /></label><label>別名<Input disabled={busy} maxLength={1600} value={personDraft.aliases} onChange={e => setPersonDraft({ ...personDraft, aliases: e.target.value })} placeholder="カンマ区切り。例: Ao, あおちゃん" /></label><label>タグ<Input disabled={busy} maxLength={1600} value={personDraft.tags} onChange={e => setPersonDraft({ ...personDraft, tags: e.target.value })} placeholder="カンマ区切り。例: VRChat, 制作" /></label><label>メモ<Textarea disabled={busy} maxLength={6000} rows={5} value={personDraft.notes} onChange={e => setPersonDraft({ ...personDraft, notes: e.target.value })} placeholder="どこで知り合ったか、覚えておきたいこと" /></label><p className="small-note">別名・タグはそれぞれ20個まで。パスワードや秘密情報は入れないでください。</p>{formError && <p className="form-error" role="alert">{formError}</p>}<div className="form-actions"><Button type="button" variant="outline" onClick={() => setPersonDraft(null)} disabled={busy}>キャンセル</Button><Button type="submit" disabled={busy}>{busy ? '保存中…' : '保存する'}</Button></div></form>}</DialogContent></Dialog>
-    <Dialog open={!!accountDraft} onOpenChange={open => { if (!open && !busy) setAccountDraft(null); }}><DialogContent className="record-dialog"><DialogHeader><DialogTitle>{accountDraft?.id ? 'アカウントを編集' : 'アカウントを追加'}</DialogTitle><DialogDescription>プロフィールURLまたはサービスのIDを登録します。外部サービスには接続しません。</DialogDescription></DialogHeader>{accountDraft && <form onSubmit={e => void submitAccount(e)} className="record-form"><div className="form-label">サービス<Choice disabled={busy} label="登録するサービス" value={accountDraft.service} onChange={v => setAccountDraft({ ...accountDraft, service: v as Service, url: '' })} items={services.map(s => ({ value: s, label: s }))} /></div><label>表示名<Input disabled={busy} maxLength={100} value={accountDraft.label} onChange={e => setAccountDraft({ ...accountDraft, label: e.target.value })} placeholder="サービスでの表示名（任意）" /></label><label>プロフィールURL / ID <span className="required">必須</span><Input disabled={busy} required maxLength={500} value={accountDraft.url} onChange={e => setAccountDraft({ ...accountDraft, url: e.target.value })} placeholder={accountDraft.service === 'Discord' ? '17〜20桁のユーザーID' : accountDraft.service === 'X' ? '@username または https://x.com/username' : 'https://vrchat.com/home/user/usr_…'} /></label><div className="form-label">だれのアカウント？<Choice disabled={busy} label="アカウントの紐づけ先" value={accountDraft.personId} onChange={v => setAccountDraft({ ...accountDraft, personId: v })} items={peopleChoices} /></div><p className="small-note">Discordの表示名だけでは照合しません。数字のユーザーIDが必要です。URLの追跡パラメーターは保存時に取り除きます。</p>{formError && <p className="form-error" role="alert">{formError}</p>}<div className="form-actions"><Button type="button" variant="outline" onClick={() => setAccountDraft(null)} disabled={busy}>キャンセル</Button><Button type="submit" disabled={busy}>{busy ? '保存中…' : '保存する'}</Button></div></form>}</DialogContent></Dialog>
-    <Dialog open={importOpen} onOpenChange={setImportOpen}><DialogContent className="record-dialog"><DialogHeader><DialogTitle>JSONを読み込む</DialogTitle><DialogDescription>version 1 のだれだっけJSONを選ぶか、貼り付けてください。{scope === 'demo' ? 'デモ' : 'マイレコード'}だけが対象です。</DialogDescription></DialogHeader><Button variant="outline" onClick={() => inputFile.current?.click()}><FileJson />ファイルを選ぶ</Button><label className="form-label">JSON<Textarea disabled={busy} rows={8} maxLength={900000} value={importText} onChange={e => setImportText(e.target.value)} spellCheck={false} /></label><p className="small-note">読み込み前に内容を検証します。今の記録は置き換わり、直前の状態を履歴に残します。900KBまで。</p>{formError && <p className="form-error" role="alert">{formError}</p>}<Button onClick={stageImport} disabled={busy || !importText.trim()}>内容を確認して読み込む</Button></DialogContent></Dialog>
+    <Dialog open={!!personDraft} onOpenChange={open => { if (!open) closePersonDraft(); }}><DialogContent className="record-dialog"><DialogHeader><DialogTitle>{personDraft?.id ? '人の記録を編集' : '人を追加'}</DialogTitle><DialogDescription>{scope === 'demo' ? 'デモ保存先への登録です。' : 'マイレコードへの登録です。'} 呼びやすい名前でまとめておけます。</DialogDescription></DialogHeader>{personDraft && <form onSubmit={e => void submitPerson(e)} className="record-form"><label>名前 <span className="required">必須</span><Input disabled={busy} autoFocus required maxLength={100} value={personDraft.name} onChange={e => setPersonDraft({ ...personDraft, name: e.target.value })} placeholder="いつも呼んでいる名前" /></label><label>別名<Input disabled={busy} maxLength={1600} value={personDraft.aliases} onChange={e => setPersonDraft({ ...personDraft, aliases: e.target.value })} placeholder="カンマ区切り。例: Ao, あおちゃん" /></label><label>タグ<Input disabled={busy} maxLength={1600} value={personDraft.tags} onChange={e => setPersonDraft({ ...personDraft, tags: e.target.value })} placeholder="カンマ区切り。例: VRChat, 制作" /></label><label>メモ<Textarea disabled={busy} maxLength={6000} rows={5} value={personDraft.notes} onChange={e => setPersonDraft({ ...personDraft, notes: e.target.value })} placeholder="どこで知り合ったか、覚えておきたいこと" /></label><p className="small-note">別名・タグはそれぞれ20個まで。パスワードや秘密情報は入れないでください。</p>{formError && <p className="form-error" role="alert">{formError}</p>}<div className="form-actions"><Button type="button" variant="outline" onClick={closePersonDraft} disabled={busy}>キャンセル</Button><Button type="submit" disabled={busy}>{busy ? '保存中…' : '保存する'}</Button></div></form>}</DialogContent></Dialog>
+    <Dialog open={!!accountDraft} onOpenChange={open => { if (!open) closeAccountDraft(); }}><DialogContent className="record-dialog"><DialogHeader><DialogTitle>{accountDraft?.id ? 'アカウントを編集' : 'アカウントを追加'}</DialogTitle><DialogDescription>プロフィールURLまたはサービスのIDを登録します。外部サービスには接続しません。</DialogDescription></DialogHeader>{accountDraft && <form onSubmit={e => void submitAccount(e)} className="record-form"><div className="form-label">サービス<Choice disabled={busy} label="登録するサービス" value={accountDraft.service} onChange={v => setAccountDraft({ ...accountDraft, service: v as Service, url: '' })} items={services.map(s => ({ value: s, label: s }))} /></div><label>表示名<Input disabled={busy} maxLength={100} value={accountDraft.label} onChange={e => setAccountDraft({ ...accountDraft, label: e.target.value })} placeholder="サービスでの表示名（任意）" /></label><label>プロフィールURL / ID <span className="required">必須</span><Input disabled={busy} required maxLength={500} value={accountDraft.url} onChange={e => setAccountDraft({ ...accountDraft, url: e.target.value })} placeholder={accountDraft.service === 'Discord' ? '17〜20桁のユーザーID' : accountDraft.service === 'X' ? '@username または https://x.com/username' : 'https://vrchat.com/home/user/usr_…'} /></label><div className="form-label">だれのアカウント？<Choice disabled={busy} label="アカウントの紐づけ先" value={accountDraft.personId} onChange={v => setAccountDraft({ ...accountDraft, personId: v })} items={peopleChoices} /></div><p className="small-note">Discordの表示名だけでは照合しません。数字のユーザーIDが必要です。URLの追跡パラメーターは保存時に取り除きます。</p>{formError && <p className="form-error" role="alert">{formError}</p>}<div className="form-actions"><Button type="button" variant="outline" onClick={closeAccountDraft} disabled={busy}>キャンセル</Button><Button type="submit" disabled={busy}>{busy ? '保存中…' : '保存する'}</Button></div></form>}</DialogContent></Dialog>
+    <Dialog open={importOpen} onOpenChange={open => { if (!open) closeImport(); }}><DialogContent className="record-dialog"><DialogHeader><DialogTitle>JSONを読み込む</DialogTitle><DialogDescription>version 1 のだれだっけJSONを選ぶか、貼り付けてください。{scope === 'demo' ? 'デモ' : 'マイレコード'}だけが対象です。</DialogDescription></DialogHeader><Button variant="outline" onClick={() => inputFile.current?.click()}><FileJson />ファイルを選ぶ</Button><label className="form-label">JSON<Textarea disabled={busy} rows={8} maxLength={900000} value={importText} onChange={e => setImportText(e.target.value)} spellCheck={false} /></label><p className="small-note">読み込み前に内容を検証します。今の記録は置き換わり、直前の状態を履歴に残します。900KBまで。</p>{formError && <p className="form-error" role="alert">{formError}</p>}<Button onClick={stageImport} disabled={busy || !importText.trim()}>内容を確認して読み込む</Button></DialogContent></Dialog>
     <Dialog open={exportOpen} onOpenChange={setExportOpen}><DialogContent className="record-dialog"><DialogHeader><DialogTitle>JSONを書き出す</DialogTitle><DialogDescription>{scope === 'demo' ? 'デモ' : 'マイレコード'}の{data.people.length}人・{data.accounts.length}アカウントを保存します。</DialogDescription></DialogHeader><Textarea disabled={busy} readOnly rows={8} value={exportData(data)} aria-label="書き出しJSON" spellCheck={false} /><p className="small-note">名前・メモ・URLが含まれます。ファイルは自分で安全に保管してください。操作履歴は書き出しません。</p><div className="settings-actions"><Button onClick={downloadExport}><Download />ファイルを保存</Button><Button variant="outline" onClick={() => void copyExport()}>{copied ? <Check /> : <Copy />}{copied ? 'コピー済み' : 'コピー'}</Button></div></DialogContent></Dialog>
+    <AlertDialog open={!!discard} onOpenChange={open => { if (!open) setDiscard(null); }}><AlertDialogContent onCloseAutoFocus={event => { if (discardFocus.current?.isConnected) { event.preventDefault(); discardFocus.current.focus(); } }}><AlertDialogTitle>保存していない入力を破棄しますか？</AlertDialogTitle><AlertDialogDescription>入力した変更はまだ保存されていません。編集を続けると、入力はそのまま残ります。</AlertDialogDescription><AlertDialogFooter><AlertDialogCancel>編集を続ける</AlertDialogCancel><AlertDialogAction onClick={discardChanges}>入力を破棄する</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
     <AlertDialog open={!!confirmation} onOpenChange={open => { if (!open) setConfirmation(null); }}><AlertDialogContent><AlertDialogTitle>{confirmation?.title}</AlertDialogTitle><AlertDialogDescription>{confirmation?.message}</AlertDialogDescription><AlertDialogFooter><AlertDialogCancel>キャンセル</AlertDialogCancel><AlertDialogAction onClick={() => { const c = confirmation; setConfirmation(null); if (c) void c.run(); }} disabled={busy}>{confirmation?.action}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
   </div>;
 }

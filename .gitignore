@@ -14,3 +14,7 @@ coverage/
 
 # Generated from wrangler.jsonc; CI and local setup regenerate these.
 worker-configuration.d.ts
+
+# Synthetic browser regression artifacts.
+test-results/
+playwright-report/
