@@ -30,7 +30,7 @@ function harness() {
     document: { activeElement: null }, HTMLElement: class {}, personDraftChanged, accountDraftChanged,
     blankPerson: () => ({ name: '', aliases: '', tags: '', notes: '' }),
   };
-  for (const name of ['PersonDraft', 'AccountDraft', 'ImportText', 'ImportOpen', 'Discard', 'Scope', 'Query', 'FormError']) {
+  for (const name of ['ImportReview', 'ImportSource', 'ImportFilePending', 'EmptyImportConfirmed', 'PersonDraft', 'AccountDraft', 'ImportText', 'ImportOpen', 'Discard', 'Scope', 'Query', 'FormError']) {
     const key = name[0].toLowerCase() + name.slice(1);
     context['set' + name] = value => { view[key] = value; context[key] = value; };
   }

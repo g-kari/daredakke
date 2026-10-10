@@ -31,8 +31,8 @@ function harness(namespace = null) {
   const view = { state: null, importText: '', importOpen: false, checkingSession: false };
   const windowEvents = new Map(), documentEvents = new Map(), requests = [];
   const context = {
-    scope: 'demo', namespace,
-    identityEpoch: { current: 0 }, importReadEpoch: { current: 0 },
+    scope: 'demo', namespace, busy: false,
+    identityEpoch: { current: 0 }, importReadEpoch: { current: 0 }, importConfirmationFocus: { current: null }, importSessionFocus: { current: null },
     personDraftInitial: { current: null }, accountDraftInitial: { current: null }, draftFocus: { current: null }, discardFocus: { current: null },
     namespaceRef: { current: namespace }, stateRef: { current: null },
     sessionPending: { current: false }, recordLoad: { current: null },
@@ -43,11 +43,12 @@ function harness(namespace = null) {
     fetch: (url, options) => { const pending = deferred(); requests.push({ url, options, ...pending }); return pending.promise; },
     toast: { error: () => { view.toasts = (view.toasts ?? 0) + 1; } },
   };
-  for (const name of ['State', 'Namespace', 'Revision', 'Selected', 'PersonDraft', 'AccountDraft', 'Confirmation', 'Discard', 'ImportText', 'ImportOpen', 'ExportOpen', 'Copied', 'Query', 'ServiceFilter', 'MergeTarget', 'FormError', 'Error', 'CheckingSession']) {
+  for (const name of ['ImportConfirmationInterrupted', 'ImportReview', 'ImportSource', 'ImportFilePending', 'EmptyImportConfirmed', 'State', 'Namespace', 'Revision', 'Selected', 'PersonDraft', 'AccountDraft', 'Confirmation', 'Discard', 'ImportText', 'ImportOpen', 'ExportOpen', 'Copied', 'Query', 'ServiceFilter', 'MergeTarget', 'FormError', 'Error', 'CheckingSession']) {
     const key = name[0].toLowerCase() + name.slice(1);
     context['set' + name] = value => { view[key] = value; };
   }
   context.clearSessionData = callback(functions.get('clearSessionData'), context, 'clearSessionData');
+  context.pauseConfirmationsForSession = callback(functions.get('pauseConfirmationsForSession'), context, 'pauseConfirmationsForSession');
   return { context, view, windowEvents, documentEvents, requests };
 }
 const loadNode = effects.find(node => node.getText(source).includes("'/api/records?scope='"));

@@ -14,11 +14,13 @@ import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
 import { type PersonDraft, type AccountDraft, personDraftChanged, accountDraftChanged } from '@/lib/drafts';
 import { identityChanged, readNamespace, readSessionFile, verifyLoadedNamespace, sessionChecks } from '@/lib/session';
+import { buildImportReview, type ImportReview } from '@/domain/import-review';
 import { type Person, type Account, type Service, type Data, type RecordState, colors, demoData, empty, normalizeAccount, validateData, change, undoChange, mergePeople, duplicateGroups, parseImport, exportData } from '@/domain/records';
 
 type DraftKind = 'person' | 'account' | 'import';
 type DraftFocus = { kind: DraftKind; target: HTMLElement; dialog: HTMLElement; epoch: number };
-type Confirm = { title: string; message: string; action: string; run: () => Promise<void> };
+type Confirm = { title: string; message: string; action: string; run: () => Promise<void>; kind?: 'import' };
+type StagedImport = { review: ImportReview; text: string; source: string; baseline: RecordState; revision: number; namespace: string; epoch: number; readEpoch: number };
 const blankPerson = (): PersonDraft => ({ name: '', aliases: '', tags: '', notes: '' });
 const split = (value: string) => value.split(/[,、\n]/).map(v => v.trim()).filter(Boolean);
 const services: Service[] = ['Discord', 'X', 'VRChat'];
@@ -57,6 +59,11 @@ export default function FriendRecord() {
   const [mergeTarget, setMergeTarget] = useState('none');
   const [importText, setImportText] = useState('');
   const [importOpen, setImportOpen] = useState(false);
+  const [importReview, setImportReview] = useState<StagedImport | null>(null);
+  const [importSource, setImportSource] = useState('貼り付けたJSON');
+  const [importFilePending, setImportFilePending] = useState(false);
+  const [emptyImportConfirmed, setEmptyImportConfirmed] = useState(false);
+  const [importConfirmationInterrupted, setImportConfirmationInterrupted] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
@@ -67,12 +74,18 @@ export default function FriendRecord() {
   const discardFocus = useRef<DraftFocus | null>(null);
   const startPersonCreation = useRef<() => void>(() => {}); startPersonCreation.current = () => editPerson();
   const stateRef = useRef(state); stateRef.current = state;
+  const confirmationRef = useRef(confirmation); confirmationRef.current = confirmation;
   const namespaceRef = useRef<string | null>(null);
   const identityEpoch = useRef(0);
   const importReadEpoch = useRef(0);
   const sessionPending = useRef(false);
   const recordLoad = useRef<AbortController | null>(null);
   const inputFile = useRef<HTMLInputElement>(null);
+  const importReviewHeading = useRef<HTMLHeadingElement>(null);
+  const importTextInput = useRef<HTMLTextAreaElement>(null);
+  const importConfirmButton = useRef<HTMLButtonElement>(null);
+  const importConfirmationFocus = useRef<{ target: HTMLButtonElement; epoch: number; readEpoch: number; namespace: string } | null>(null);
+  const importSessionFocus = useRef<{ epoch: number; namespace: string } | null>(null);
   const personDirty = personDraftChanged(personDraft, personDraftInitial.current);
   const accountDirty = accountDraftChanged(accountDraft, accountDraftInitial.current);
   const importDirty = importOpen && !!importText.trim();
@@ -94,12 +107,14 @@ export default function FriendRecord() {
   function clearSessionData(message = '') {
     identityEpoch.current++;
     importReadEpoch.current++;
+    importConfirmationFocus.current = null;
+    importSessionFocus.current = null; setImportConfirmationInterrupted(false);
     sessionPending.current = false; setCheckingSession(false);
     stateRef.current = null; namespaceRef.current = null;
     setState(null); setNamespace(null); setRevision(0); setSelected(null);
     personDraftInitial.current = null; accountDraftInitial.current = null; draftFocus.current = null; discardFocus.current = null;
     setPersonDraft(null); setAccountDraft(null); setConfirmation(null); setDiscard(null);
-    setImportText(''); setImportOpen(false); setExportOpen(false); setCopied(false);
+    setImportText(''); setImportOpen(false); setImportReview(null); setImportSource('貼り付けたJSON'); setImportFilePending(false); setEmptyImportConfirmed(false); setExportOpen(false); setCopied(false);
     setQuery(''); setServiceFilter('all'); setMergeTarget('none'); setFormError(''); setError(message);
     if (inputFile.current) inputFile.current.value = '';
   }
@@ -143,7 +158,49 @@ export default function FriendRecord() {
     requestDiscard(accountDirty, () => { clearDraftFocus('account'); setAccountDraft(null); accountDraftInitial.current = null; setFormError(''); });
   }
   function closeImport() {
-    requestDiscard(importDirty, () => { clearDraftFocus('import'); importReadEpoch.current++; setImportOpen(false); setImportText(''); setFormError(''); });
+    requestDiscard(importDirty, () => { clearDraftFocus('import'); importReadEpoch.current++; setImportOpen(false); setImportText(''); setImportReview(null); setImportSource('貼り付けたJSON'); setImportFilePending(false); setEmptyImportConfirmed(false); setFormError(''); });
+  }
+  useEffect(() => { if (importReview) importReviewHeading.current?.focus(); }, [importReview]);
+  useEffect(() => {
+    if (checkingSession || !importSessionFocus.current) return;
+    const focus = importSessionFocus.current; importSessionFocus.current = null;
+    const frame = requestAnimationFrame(() => {
+      if (focus.epoch !== identityEpoch.current || focus.namespace !== namespaceRef.current || sessionPending.current || !importConfirmButton.current?.isConnected) return;
+      if (!importConfirmButton.current.disabled) importConfirmButton.current.focus(); else importReviewHeading.current?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [checkingSession]);
+  useEffect(() => { if (importReview && importReview.baseline !== state) { setImportReview(null); setEmptyImportConfirmed(false); } }, [state, importReview]);
+  function editImportText(value: string) {
+    importReadEpoch.current++;
+    if (inputFile.current) inputFile.current.value = '';
+    setImportText(value); setImportSource('貼り付けたJSON'); setImportReview(null); setImportFilePending(false); setEmptyImportConfirmed(false); setImportConfirmationInterrupted(false); setFormError('');
+  }
+  function editImportPreview() {
+    const epoch = identityEpoch.current;
+    setImportReview(null); setEmptyImportConfirmed(false); setFormError('');
+    requestAnimationFrame(() => { if (epoch === identityEpoch.current && !sessionPending.current) importTextInput.current?.focus(); });
+  }
+  function restoreImportConfirmationFocus(event: Event) {
+    const focus = importConfirmationFocus.current;
+    // A same-owner session probe temporarily unmounts both dialogs. Keep the
+    // guarded intent and resolve the newly mounted button when the alert closes.
+    if (sessionPending.current || confirmationRef.current) return;
+    importConfirmationFocus.current = null;
+    const target = importConfirmButton.current || focus?.target;
+    if (!focus || focus.epoch !== identityEpoch.current || focus.readEpoch !== importReadEpoch.current || focus.namespace !== namespaceRef.current || !target?.isConnected) return;
+    event.preventDefault();
+    if (!target.disabled) target.focus();
+    else importReviewHeading.current?.focus();
+  }
+  function pauseConfirmationsForSession() {
+    const focus = importConfirmationFocus.current;
+    if (focus && focus.epoch === identityEpoch.current && focus.namespace === namespaceRef.current) {
+      importSessionFocus.current = { epoch: focus.epoch, namespace: focus.namespace }; setImportConfirmationInterrupted(true);
+    }
+    // Keep the existing private-UI unmount during verification, but never remount
+    // nested destructive dialogs automatically. The draft/review stays intact.
+    importConfirmationFocus.current = null; setConfirmation(null); setDiscard(null); discardFocus.current = null;
   }
   function switchScope(next: 'demo' | 'personal') {
     if (next === scope) return;
@@ -177,6 +234,7 @@ export default function FriendRecord() {
       if (!expected) { recordLoad.current?.abort(); clearSessionData('読み込み中に表示状態が変わりました。再読み込みしてログインを確認してください。'); }
       const epoch = identityEpoch.current;
       sessionPending.current = true; setCheckingSession(true);
+      pauseConfirmationsForSession();
       try {
         const response = await fetch('/api/session', { cache: 'no-store', signal: operation.signal });
         const result = await response.json();
@@ -255,22 +313,37 @@ export default function FriendRecord() {
   function removePerson(p: Person) { setConfirmation({ title: '人の記録を削除しますか？', message: `「${p.name}」の記録を削除します。アカウントは未整理へ移します。元に戻すこともできます。`, action: '人の記録を削除', run: async () => { if (await update({ people: data.people.filter(c => c.id !== p.id), accounts: data.accounts.map(a => a.personId === p.id ? { ...a, personId: null } : a) }, '人の記録を削除しました')) setSelected(null); } }); }
   function removeAccount(a: Account) { setConfirmation({ title: 'アカウントの登録を削除しますか？', message: `${a.service}「${a.label}」の登録だけを削除します。外部サービスのアカウントには何もしません。元に戻せます。`, action: '登録を削除', run: async () => { await update({ ...data, accounts: data.accounts.filter(c => c.id !== a.id) }, 'アカウントの登録を削除しました'); } }); }
   async function readFile(file?: File) {
-    if (!file || !namespace || namespace !== namespaceRef.current) return;
+    if (!file || busy || sessionPending.current || !namespace || namespace !== namespaceRef.current) return;
     const expected = namespace, epoch = identityEpoch.current, readEpoch = ++importReadEpoch.current;
     const isCurrent = () => expected === namespaceRef.current && epoch === identityEpoch.current && readEpoch === importReadEpoch.current;
-    if (file.size > 900000) { toast.error('JSONファイルは900KBまでです。'); return; }
+    setImportReview(null); setEmptyImportConfirmed(false); setImportConfirmationInterrupted(false);
+    if (file.size > 900000) { setImportFilePending(false); toast.error('JSONファイルは900KBまでです。'); if (inputFile.current) inputFile.current.value = ''; return; }
+    setImportFilePending(true);
     try {
       const text = await readSessionFile(file, isCurrent);
       if (text === null || !isCurrent()) return;
-      parseImport(text); setImportText(text); setFormError(''); setImportOpen(true);
+      parseImport(text); setImportText(text); setImportSource(file.name || '選択したファイル'); setFormError(''); setImportOpen(true);
     } catch (e) { if (isCurrent()) toast.error((e as Error).message); }
-    finally { if (isCurrent() && inputFile.current) inputFile.current.value = ''; }
+    finally { if (isCurrent()) { setImportFilePending(false); if (inputFile.current) inputFile.current.value = ''; } }
   }
   function stageImport() {
+    if (busy || importFilePending || sessionPending.current || !state || !namespace || namespace !== namespaceRef.current) return;
     try {
-      const next = parseImport(importText);
-      setConfirmation({ title: `${scope === 'demo' ? 'デモ' : 'マイレコード'}を読み込みデータに置き換えますか？`, message: `${next.people.length}人・${next.accounts.length}アカウントを読み込みます。この保存先の今の記録は置き換わります。もう一方の保存先には影響しません。直前の記録へ戻せます。`, action: '置き換えて読み込む', run: async () => { if (await update(next, 'JSONを読み込みました')) { clearDraftFocus('import'); setImportOpen(false); setImportText(''); setSelected(null); } } });
-    } catch (e) { setFormError((e as Error).message); }
+      const review = buildImportReview(data, importText);
+      setImportReview({ review, text: importText, source: importSource, baseline: state, revision, namespace, epoch: identityEpoch.current, readEpoch: importReadEpoch.current }); setEmptyImportConfirmed(false); setImportConfirmationInterrupted(false); setFormError('');
+    } catch (e) { setImportReview(null); setEmptyImportConfirmed(false); setFormError((e as Error).message); }
+  }
+  function confirmImport() {
+    const staged = importReview;
+    if (!staged || busy || importFilePending || sessionPending.current || (staged.review.empty && !emptyImportConfirmed)) return;
+    const isCurrent = () => staged.baseline === stateRef.current && staged.revision === revision && staged.namespace === namespaceRef.current && staged.epoch === identityEpoch.current && staged.readEpoch === importReadEpoch.current && !sessionPending.current;
+    if (!isCurrent()) { setImportReview(null); setEmptyImportConfirmed(false); setFormError('表示中の記録か入力が変わりました。内容をもう一度確認してください。'); return; }
+    const r = staged.review;
+    if (importConfirmButton.current) importConfirmationFocus.current = { target: importConfirmButton.current, epoch: staged.epoch, readEpoch: staged.readEpoch, namespace: staged.namespace };
+    setConfirmation({ kind: 'import', title: `${scope === 'demo' ? 'デモ' : 'マイレコード'}を読み込みデータに置き換えますか？`, message: `${r.people.before}人・${r.accounts.before}アカウントから、${r.people.after}人・${r.accounts.after}アカウントへ置き換えます。今の記録から${r.people.removed}人・${r.accounts.removed}アカウントが取り除かれます。${r.empty ? 'この保存先の記録は空になります。' : ''}もう一方の保存先には影響しません。直前の記録へ戻せます。`, action: '置き換えて読み込む', run: async () => {
+      if (!isCurrent()) return;
+      if (await update(r.data, 'JSONを読み込みました')) { clearDraftFocus('import'); importReadEpoch.current++; setImportOpen(false); setImportText(''); setImportReview(null); setImportSource('貼り付けたJSON'); setEmptyImportConfirmed(false); setSelected(null); }
+    } });
   }
   function downloadExport() {
     if (sessionPending.current || !namespace || namespace !== namespaceRef.current) return;
@@ -342,9 +415,28 @@ export default function FriendRecord() {
     {compactProfile && <Sheet open={!!person} onOpenChange={open => { if (!open) setSelected(null); }}><SheetContent className="person-sheet" onCloseAutoFocus={event => { const focus = profileFocus.current; if (focus && focus.epoch === identityEpoch.current && !sessionPending.current && focus.target.isConnected) { event.preventDefault(); focus.target.focus(); } }}><SheetHeader><SheetTitle>{person?.name || '人の記録'}</SheetTitle><SheetDescription>別名・メモ・アカウントをこの人にまとめる</SheetDescription></SheetHeader>{person && <div className="sheet-body">{profileContent(person)}</div>}</SheetContent></Sheet>}
     <Dialog open={!!personDraft} onOpenChange={open => { if (!open) closePersonDraft(); }}><DialogContent className="record-dialog" onFocusCapture={event => rememberDraftFocus('person', event)}><DialogHeader><DialogTitle>{personDraft?.id ? '人の記録を編集' : '人を追加'}</DialogTitle><DialogDescription>{scope === 'demo' ? 'デモ保存先への登録です。' : 'マイレコードへの登録です。'} 呼びやすい名前でまとめておけます。</DialogDescription></DialogHeader>{personDraft && <form onSubmit={e => void submitPerson(e)} className="record-form"><label>名前 <span className="required">必須</span><Input disabled={busy} autoFocus required maxLength={100} value={personDraft.name} onChange={e => setPersonDraft({ ...personDraft, name: e.target.value })} placeholder="いつも呼んでいる名前" /></label><label>別名<Input disabled={busy} maxLength={1600} value={personDraft.aliases} onChange={e => setPersonDraft({ ...personDraft, aliases: e.target.value })} placeholder="カンマ区切り。例: Ao, あおちゃん" /></label><label>タグ<Input disabled={busy} maxLength={1600} value={personDraft.tags} onChange={e => setPersonDraft({ ...personDraft, tags: e.target.value })} placeholder="カンマ区切り。例: VRChat, 制作" /></label><label>メモ<Textarea disabled={busy} maxLength={6000} rows={5} value={personDraft.notes} onChange={e => setPersonDraft({ ...personDraft, notes: e.target.value })} placeholder="どこで知り合ったか、覚えておきたいこと" /></label><p className="small-note">別名・タグはそれぞれ20個まで。パスワードや秘密情報は入れないでください。</p>{formError && <p className="form-error" role="alert">{formError}</p>}<div className="form-actions"><Button type="button" variant="outline" onClick={closePersonDraft} disabled={busy}>キャンセル</Button><Button type="submit" disabled={busy}>{busy ? '保存中…' : '保存する'}</Button></div></form>}</DialogContent></Dialog>
     <Dialog open={!!accountDraft} onOpenChange={open => { if (!open) closeAccountDraft(); }}><DialogContent className="record-dialog" onFocusCapture={event => rememberDraftFocus('account', event)}><DialogHeader><DialogTitle>{accountDraft?.id ? 'アカウントを編集' : 'アカウントを追加'}</DialogTitle><DialogDescription>プロフィールURLまたはサービスのIDを登録します。外部サービスには接続しません。</DialogDescription></DialogHeader>{accountDraft && <form onSubmit={e => void submitAccount(e)} className="record-form"><div className="form-label">サービス<Choice disabled={busy} label="登録するサービス" value={accountDraft.service} onChange={v => setAccountDraft({ ...accountDraft, service: v as Service, url: '' })} items={services.map(s => ({ value: s, label: s }))} /></div><label>表示名<Input disabled={busy} maxLength={100} value={accountDraft.label} onChange={e => setAccountDraft({ ...accountDraft, label: e.target.value })} placeholder="サービスでの表示名（任意）" /></label><label>プロフィールURL / ID <span className="required">必須</span><Input disabled={busy} required maxLength={500} value={accountDraft.url} onChange={e => setAccountDraft({ ...accountDraft, url: e.target.value })} placeholder={accountDraft.service === 'Discord' ? '17〜20桁のユーザーID' : accountDraft.service === 'X' ? '@username または https://x.com/username' : 'https://vrchat.com/home/user/usr_…'} /></label><div className="form-label">だれのアカウント？<Choice disabled={busy} label="アカウントの紐づけ先" value={accountDraft.personId} onChange={v => setAccountDraft({ ...accountDraft, personId: v })} items={peopleChoices} /></div><p className="small-note">Discordの表示名だけでは照合しません。数字のユーザーIDが必要です。URLの追跡パラメーターは保存時に取り除きます。</p>{formError && <p className="form-error" role="alert">{formError}</p>}<div className="form-actions"><Button type="button" variant="outline" onClick={closeAccountDraft} disabled={busy}>キャンセル</Button><Button type="submit" disabled={busy}>{busy ? '保存中…' : '保存する'}</Button></div></form>}</DialogContent></Dialog>
-    <Dialog open={importOpen} onOpenChange={open => { if (!open) closeImport(); }}><DialogContent className="record-dialog" onFocusCapture={event => rememberDraftFocus('import', event)}><DialogHeader><DialogTitle>JSONを読み込む</DialogTitle><DialogDescription>version 1 のだれだっけJSONを選ぶか、貼り付けてください。{scope === 'demo' ? 'デモ' : 'マイレコード'}だけが対象です。</DialogDescription></DialogHeader><Button variant="outline" onClick={() => inputFile.current?.click()}><FileJson />ファイルを選ぶ</Button><label className="form-label">JSON<Textarea disabled={busy} rows={8} maxLength={900000} value={importText} onChange={e => setImportText(e.target.value)} spellCheck={false} /></label><p className="small-note">読み込み前に内容を検証します。今の記録は置き換わり、直前の状態を履歴に残します。900KBまで。</p>{formError && <p className="form-error" role="alert">{formError}</p>}<Button onClick={stageImport} disabled={busy || !importText.trim()}>内容を確認して読み込む</Button></DialogContent></Dialog>
+    <Dialog open={importOpen} onOpenChange={open => { if (!open) closeImport(); }}><DialogContent className="record-dialog import-dialog" onFocusCapture={event => rememberDraftFocus('import', event)}>
+      <DialogHeader><DialogTitle>JSONを読み込む</DialogTitle><DialogDescription>version 1 のだれだっけJSONを選ぶか、貼り付けてください。{scope === 'demo' ? 'デモ' : 'マイレコード'}だけが対象です。</DialogDescription></DialogHeader>
+      <Button variant="outline" disabled={busy} onClick={() => inputFile.current?.click()}><FileJson />ファイルを選ぶ</Button>
+      <label className="form-label">JSON<Textarea className="import-json-input" ref={importTextInput} disabled={busy} rows={importReview ? 3 : 8} maxLength={900000} value={importText} onChange={e => editImportText(e.target.value)} spellCheck={false} /></label>
+      <p className="small-note">今の記録に追加するのではなく、保存先全体を置き換えます。直前の状態を履歴に残します。900KBまで。</p>
+      {importFilePending && <p role="status" className="small-note">ファイルを読み込んでいます…</p>}
+      {formError && <p className="form-error" role="alert">{formError}</p>}
+      {!importReview ? <Button onClick={stageImport} disabled={busy || importFilePending || !importText.trim()}>内容を確認して読み込む</Button> : <section className="import-review" aria-label="読み込み内容の確認">
+        <h3 ref={importReviewHeading} tabIndex={-1}>読み込み内容の確認</h3>
+        <p className="import-provenance">入力元: {importReview.source}<br />形式: {importReview.review.format} / version 1<br />置き換える保存先: {scope === 'demo' ? 'デモ' : 'マイレコード'}</p>
+        <p className="small-note">入力元は選んだファイル名か貼り付け操作です。JSONの形式は確認しましたが、作成者や内容の正しさを保証するものではありません。</p>
+        <div className="import-counts">{([['人', importReview.review.people], ['アカウント', importReview.review.accounts]] as const).map(([label, count]) => <section key={label} aria-label={label + 'の変更'}><h4>{label}</h4><dl>{([['現在', count.before], ['読み込み後', count.after], ['追加', count.added], ['更新', count.updated], ['取り除く', count.removed], ['変更なし', count.unchanged]] as const).map(([name, value]) => <div key={name}><dt>{name}</dt><dd>{value}件</dd></div>)}</dl></section>)}</div>
+        <p className="small-note">同じIDの記録だけを比較します。名前やURLから同じ人を推測せず、異なるIDは追加・取り除くとして数えます。別名・タグの並び替えも更新に含みます。</p>
+        <div className="import-notices"><p>読み込み後の未整理アカウント: {importReview.review.unresolved}件</p><p>読み込み後の重複候補: {importReview.review.duplicateGroups}組（{importReview.review.duplicateAccounts}アカウント）</p><p className="small-note">未整理や重複候補は自動で紐づけ・統合しません。</p></div>
+        {importReview.review.empty && <div className="import-empty-warning"><p role="alert">読み込み後は0人・0アカウントです。この保存先の今の記録がすべて取り除かれます。</p><label><input type="checkbox" disabled={busy} checked={emptyImportConfirmed} onChange={e => setEmptyImportConfirmed(e.target.checked)} />この保存先の記録を空にすることを確認しました</label></div>}
+        <p className="small-note">まだ保存していません。次の確認で置き換えを実行します。もう一方の保存先には影響しません。戻せるのは直近10操作で、長期の保管には先にJSONを書き出してください。</p>
+        {importConfirmationInterrupted && <p className="small-note" role="status">ログイン確認で置き換えの確認を中断しました。内容を確かめてから、もう一度進んでください。</p>}
+        <div className="form-actions import-actions"><Button variant="outline" disabled={busy} onClick={editImportPreview}>JSONの編集に戻る</Button><Button ref={importConfirmButton} onClick={confirmImport} disabled={busy || importFilePending || (importReview.review.empty && !emptyImportConfirmed)}>置き換えを確認する</Button></div>
+      </section>}
+    </DialogContent></Dialog>
     <Dialog open={exportOpen} onOpenChange={setExportOpen}><DialogContent className="record-dialog"><DialogHeader><DialogTitle>JSONを書き出す</DialogTitle><DialogDescription>{scope === 'demo' ? 'デモ' : 'マイレコード'}の{data.people.length}人・{data.accounts.length}アカウントを保存します。</DialogDescription></DialogHeader><Textarea disabled={busy} readOnly rows={8} value={exportData(data)} aria-label="書き出しJSON" spellCheck={false} /><p className="small-note">名前・メモ・URLが含まれます。ファイルは自分で安全に保管してください。操作履歴は書き出しません。</p><div className="settings-actions"><Button onClick={downloadExport}><Download />ファイルを保存</Button><Button variant="outline" onClick={() => void copyExport()}>{copied ? <Check /> : <Copy />}{copied ? 'コピー済み' : 'コピー'}</Button></div></DialogContent></Dialog>
     <AlertDialog open={!!discard} onOpenChange={open => { if (!open) setDiscard(null); }}><AlertDialogContent onCloseAutoFocus={restoreDiscardFocus}><AlertDialogTitle>保存していない入力を破棄しますか？</AlertDialogTitle><AlertDialogDescription>入力した変更はまだ保存されていません。編集を続けると、入力はそのまま残ります。</AlertDialogDescription><AlertDialogFooter><AlertDialogCancel>編集を続ける</AlertDialogCancel><AlertDialogAction onClick={discardChanges}>入力を破棄する</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
-    <AlertDialog open={!!confirmation} onOpenChange={open => { if (!open) setConfirmation(null); }}><AlertDialogContent><AlertDialogTitle>{confirmation?.title}</AlertDialogTitle><AlertDialogDescription>{confirmation?.message}</AlertDialogDescription><AlertDialogFooter><AlertDialogCancel>キャンセル</AlertDialogCancel><AlertDialogAction onClick={() => { const c = confirmation; setConfirmation(null); if (c) void c.run(); }} disabled={busy}>{confirmation?.action}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+    <AlertDialog open={!!confirmation} onOpenChange={open => { if (!open) setConfirmation(null); }}><AlertDialogContent className={confirmation?.kind === 'import' ? 'import-confirmation' : undefined} onCloseAutoFocus={restoreImportConfirmationFocus}><AlertDialogTitle>{confirmation?.title}</AlertDialogTitle><AlertDialogDescription>{confirmation?.message}</AlertDialogDescription><AlertDialogFooter><AlertDialogCancel>キャンセル</AlertDialogCancel><AlertDialogAction onClick={() => { const c = confirmation; setConfirmation(null); if (c) void c.run(); }} disabled={busy}>{confirmation?.action}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
   </div>;
 }
