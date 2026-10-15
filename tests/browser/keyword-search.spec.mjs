@@ -348,7 +348,7 @@ test('pending session checks reject tool lookup and owner changes clear old resu
   await expect(page.getByRole('alert').filter({ hasText: 'ログイン' })).toBeVisible();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expectNames(page, []);
-  expect((await tool(page, { query: '' })).result.people).toEqual([]);
+  expect((await tool(page, { query: '' })).error).toMatch(/ログイン確認中/);
   await expect(search(page)).toHaveValue('');
   await expect(page.getByRole('button', { name: '人を追加', exact: true })).toBeDisabled();
 });

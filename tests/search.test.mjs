@@ -30,7 +30,7 @@ const runUi = (query, service = 'all', records = data) => ui(records, query, ser
 function toolHarness(records = data) {
   assert.ok(toolExecute, 'actual WebMCP callback exists');
   const view = { calls: [] };
-  const context = { createRecordSearch, searchPeople, empty, sessionPending: { current: false }, stateRef: { current: { data: records } } };
+  const context = { createRecordSearch, searchPeople, empty, sessionPending: { current: false }, namespaceRef: { current: 'synthetic-verified-owner' }, stateRef: { current: { data: records } } };
   for (const key of ['Query', 'Tab', 'ServiceFilter']) context['set' + key] = value => { view[key] = value; view.calls.push([key, value]); };
   const run = new Function(...Object.keys(context), compile('return ' + toolExecute.getText(source) + ';'))(...Object.values(context));
   return { run, view, context };
@@ -136,6 +136,8 @@ test('actual search cannot reveal old records during a pending or cleared identi
   h.context.sessionPending.current = false;
   h.context.stateRef.current = null;
   assert.deepEqual(h.run({ query: '' }).people, []);
+  h.context.namespaceRef.current = null;
+  assert.throws(() => h.run({ query: '' }), /ログイン確認中/);
 });
 test('the same registered callback searches only the latest current-scope state', () => {
   const h = toolHarness();

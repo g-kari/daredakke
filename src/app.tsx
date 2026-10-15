@@ -14,6 +14,7 @@ import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
 import { type PersonDraft, type AccountDraft, personDraftChanged, accountDraftChanged } from '@/lib/drafts';
 import { identityChanged, readNamespace, readSessionFile, verifyLoadedNamespace, sessionChecks } from '@/lib/session';
+import { readJson, ReadTimeoutError } from '@/lib/reads';
 import { buildImportReview, type ImportReview } from '@/domain/import-review';
 import { createRecordSearch, searchPeople } from '@/domain/search';
 import { type Person, type Account, type Service, type Data, type RecordState, colors, demoData, empty, normalizeAccount, validateData, change, undoChange, mergePeople, duplicateGroups, parseImport, exportData } from '@/domain/records';
@@ -46,6 +47,7 @@ export default function FriendRecord() {
   const [revision, setRevision] = useState(0);
   const [namespace, setNamespace] = useState<string | null>(null);
   const [checkingSession, setCheckingSession] = useState(false);
+  const [readFailure, setReadFailure] = useState<'load' | 'session' | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [tab, setTab] = useState('people');
@@ -81,6 +83,8 @@ export default function FriendRecord() {
   const importReadEpoch = useRef(0);
   const sessionPending = useRef(false);
   const recordLoad = useRef<AbortController | null>(null);
+  const readRecovery = useRef<'load' | 'session' | null>(null);
+  const sessionRetry = useRef<() => void>(() => {});
   const inputFile = useRef<HTMLInputElement>(null);
   const importReviewHeading = useRef<HTMLHeadingElement>(null);
   const importTextInput = useRef<HTMLTextAreaElement>(null);
@@ -107,6 +111,7 @@ export default function FriendRecord() {
     importReadEpoch.current++;
     importConfirmationFocus.current = null;
     importSessionFocus.current = null; setImportConfirmationInterrupted(false);
+    readRecovery.current = null; setReadFailure(null);
     sessionPending.current = false; setCheckingSession(false);
     stateRef.current = null; namespaceRef.current = null;
     setState(null); setNamespace(null); setRevision(0); setSelected(null);
@@ -215,42 +220,59 @@ export default function FriendRecord() {
     setDiscard(null);
     if (pending && pending.epoch === identityEpoch.current && !sessionPending.current) pending.run();
   }
+  function requireReadRecovery(kind: 'load' | 'session') {
+    // Keep private state/drafts only in this component's memory. A timeout is
+    // inconclusive, so identity stays unverified until an explicit fresh check.
+    readRecovery.current = kind; setReadFailure(kind);
+    sessionPending.current = true; setCheckingSession(false);
+  }
   useEffect(() => {
     const ctrl = new AbortController(); clearSessionData();
-    recordLoad.current = ctrl;
+    recordLoad.current = ctrl; sessionPending.current = true;
     const epoch = identityEpoch.current;
-    fetch('/api/records?scope=' + scope, { signal: ctrl.signal, cache: 'no-store' }).then(async r => {
-      const result = await r.json() as { error?: string; state: RecordState; revision: number; namespace: string }; if (!r.ok) throw new Error(result.error || '読み込めませんでした。');
-      const received = await verifyLoadedNamespace(result, async () => {
-        const session = await fetch('/api/session', { signal: ctrl.signal, cache: 'no-store' });
-        if (!session.ok) throw new Error('ログインを確認できません。再読み込みしてください。');
-        return session.json();
-      }, () => !ctrl.signal.aborted && epoch === identityEpoch.current);
-      if (received && !ctrl.signal.aborted && epoch === identityEpoch.current) { namespaceRef.current = received; setNamespace(received); setState(result.state); setRevision(result.revision); }
-    }).catch(e => { if (!ctrl.signal.aborted && epoch === identityEpoch.current) setError(e.message); });
+    const isCurrent = () => !ctrl.signal.aborted && epoch === identityEpoch.current;
+    readJson('/api/records?scope=' + scope, ctrl.signal, fetch, '保存データを読み込めませんでした。再読み込みしてください。').then(async value => {
+      const result = value as { state: RecordState; revision: number; namespace: string };
+      const received = await verifyLoadedNamespace(result, () => readJson('/api/session', ctrl.signal), isCurrent);
+      if (received && isCurrent()) {
+        namespaceRef.current = received; setNamespace(received); setState(result.state); setRevision(result.revision);
+        sessionPending.current = false;
+      }
+    }).catch(e => {
+      if (!isCurrent()) return;
+      if (e instanceof ReadTimeoutError) requireReadRecovery('load');
+      else { sessionPending.current = false; setError(e instanceof Error ? e.message : '読み込めませんでした。'); }
+    });
     return () => { ctrl.abort(); if (recordLoad.current === ctrl) recordLoad.current = null; };
   }, [scope, reloadKey]);
   useEffect(() => {
     const checks = sessionChecks();
-    const check = async () => {
-      if (document.visibilityState === 'hidden') return;
+    const check = async (retry = false) => {
+      if (document.visibilityState === 'hidden' || (readRecovery.current && !retry)) return;
       const operation = checks.begin(), expected = namespaceRef.current;
       if (!expected) { recordLoad.current?.abort(); clearSessionData('読み込み中に表示状態が変わりました。再読み込みしてログインを確認してください。'); }
       const epoch = identityEpoch.current;
+      readRecovery.current = null; setReadFailure(null);
       sessionPending.current = true; setCheckingSession(true);
       pauseConfirmationsForSession();
       try {
-        const response = await fetch('/api/session', { cache: 'no-store', signal: operation.signal });
-        const result = await response.json();
+        const result = await readJson('/api/session', operation.signal);
         if (!operation.isCurrent() || epoch !== identityEpoch.current) return;
         const received = readNamespace(result);
-        if (!response.ok || (expected && received !== expected)) throw new Error('ログインが変わったか期限切れです。古い入力を保存せず、再読み込みしてください。');
-      } catch {
-        if (operation.isCurrent() && expected === namespaceRef.current && epoch === identityEpoch.current) clearSessionData('ログインを確認できません。古い入力を保存せず、再読み込みしてください。');
-      } finally { if (operation.isCurrent() && epoch === identityEpoch.current) { sessionPending.current = false; setCheckingSession(false); } }
+        if (expected && received !== expected) throw new Error('ログインが変わったか期限切れです。古い入力を保存せず、再読み込みしてください。');
+      } catch (e) {
+        if (operation.isCurrent() && expected === namespaceRef.current && epoch === identityEpoch.current) {
+          if (e instanceof ReadTimeoutError) requireReadRecovery(expected ? 'session' : 'load');
+          else clearSessionData('ログインを確認できません。古い入力を保存せず、再読み込みしてください。');
+        }
+      } finally {
+        if (operation.isCurrent() && epoch === identityEpoch.current && !readRecovery.current) { sessionPending.current = false; setCheckingSession(false); }
+      }
     };
-    window.addEventListener('focus', check); document.addEventListener('visibilitychange', check);
-    return () => { checks.cancel(); window.removeEventListener('focus', check); document.removeEventListener('visibilitychange', check); };
+    const onReturn = () => check();
+    sessionRetry.current = () => { void check(true); };
+    window.addEventListener('focus', onReturn); document.addEventListener('visibilitychange', onReturn);
+    return () => { checks.cancel(); sessionRetry.current = () => {}; window.removeEventListener('focus', onReturn); document.removeEventListener('visibilitychange', onReturn); };
   }, []);
   useEffect(() => {
     type Context = { registerTool: (tool: Record<string, unknown>, opts: { signal: AbortSignal }) => void | Promise<void> };
@@ -259,13 +281,13 @@ export default function FriendRecord() {
     const life = new AbortController();
     const tools = [
       { name: 'search_friend_records', title: '人とアカウントを検索', description: '現在の保存先を検索し、検索欄にも反映します。空白で区切ったキーワードをすべて含む人を探します。記録は変更しません。', inputSchema: { type: 'object', properties: { query: { type: 'string', maxLength: 100 } }, required: ['query'], additionalProperties: false }, annotations: { readOnlyHint: true, untrustedContentHint: true }, execute: (input: unknown) => {
-        if (sessionPending.current) throw new Error('ログイン確認中です。');
+        if (sessionPending.current || !namespaceRef.current) throw new Error('ログイン確認中です。');
         const i = input as { query?: unknown }; if (!i || typeof i.query !== 'string' || i.query.length > 100 || Object.keys(i).some(k => k !== 'query')) throw new Error('queryは100文字までの文字列です。');
         setQuery(i.query); setTab('people'); setServiceFilter('all');
         const d = stateRef.current?.data || empty(); return { people: searchPeople(d, createRecordSearch(i.query)).map(p => ({ id: p.id, name: p.name, accounts: d.accounts.filter(a => a.personId === p.id) })) };
       } },
       { name: 'start_person_creation', title: '人の追加を開く', description: '人を追加する入力画面を開きます。保存はユーザーが画面で行います。', inputSchema: { type: 'object', properties: {}, additionalProperties: false }, annotations: { readOnlyHint: false, untrustedContentHint: false }, execute: (input: unknown) => {
-        if (sessionPending.current) throw new Error('ログイン確認中です。');
+        if (sessionPending.current || !namespaceRef.current) throw new Error('ログイン確認中です。');
         if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length) throw new Error('入力は空のオブジェクトです。'); startPersonCreation.current(); return { opened: 'person_creation' };
       } },
     ];
@@ -385,6 +407,7 @@ export default function FriendRecord() {
       </div>
     </div>;
   }
+  if (readFailure) return <div className="app-shell read-recovery"><main className="main" aria-labelledby="read-recovery-title"><h1 id="read-recovery-title">ログインを確認できませんでした</h1><p role="alert">読み込みが時間内に完了しませんでした。記録と入力は、本人の確認が済むまで表示しません。</p>{readFailure === 'session' && <p>未保存の入力はこのページのメモリー内だけに残っています。同じログインを確認できれば編集に戻れます。ページを閉じると失われます。</p>}<Button onClick={() => { if (readFailure === 'session') sessionRetry.current(); else setReloadKey(k => k + 1); }}>{readFailure === 'session' ? 'ログインを再確認する' : 'もう一度読み込む'}</Button></main></div>;
   if (checkingSession) return <div className="app-shell"><main className="main"><p role="status">ログインを確認しています…</p></main></div>;
   return <div className="app-shell">
     <Toaster position="bottom-center" richColors />
