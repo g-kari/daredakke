@@ -8,17 +8,17 @@ const source = ts.createSourceFile('app.tsx', fs.readFileSync(new URL('../src/ap
 let handler;
 function visit(node) { if (ts.isFunctionDeclaration(node) && node.name?.text === 'confirmMerge') handler = node; ts.forEachChild(node, visit); } visit(source);
 function harness(data) {
-  const errors = [], confirmations = [], updates = [];
-  const context = { data, mergePeople, toast: { error: message => errors.push(message) }, setConfirmation: value => confirmations.push(value), update: async (next, label) => { updates.push({ next, label }); return true; }, setSelected() {}, setMergeTarget() {} };
+  const errors = [], confirmations = [], updates = [], mergeErrors = [];
+  const context = { data, mergePeople, toast: { error: message => errors.push(message) }, setConfirmation: value => confirmations.push(value), update: async (next, label) => { updates.push({ next, label }); return true; }, setSelected() {}, setMergeTarget() {}, setMergeErrorPair() {}, setMergeError(message) { mergeErrors.push(message); } };
   const code = ts.transpileModule(handler.getText(source), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
-  return { errors, confirmations, updates, run: new Function(...Object.keys(context), code + '\nreturn confirmMerge;')(...Object.values(context)) };
+  return { errors, confirmations, updates, mergeErrors, run: new Function(...Object.keys(context), code + '\nreturn confirmMerge;')(...Object.values(context)) };
 }
 for (const length of [80, 81, 100]) test(`source name length ${length} is checked before confirmation without mutation`, async () => {
   const data = fixture(); data.people[3].name = '名'.repeat(length); validateData(data);
   const before = structuredClone(data), h = harness(data); h.run('demo-aoi', 'demo-ao');
   assert.deepEqual(data, before); assert.equal(h.updates.length, 0);
-  if (length === 80) { assert.equal(h.errors.length, 0); assert.equal(h.confirmations.length, 1); await h.confirmations[0].run(); assert.equal(h.updates.length, 1); assert.ok(h.updates[0].next.people[0].aliases.includes('名'.repeat(length))); }
-  else { assert.equal(h.confirmations.length, 0); assert.match(h.errors[0], /80文字.*名前を短く/); assert.throws(() => mergePeople(data, 'demo-aoi', 'demo-ao'), /80文字/); }
+  if (length === 80) { assert.equal(h.errors.length, 0); assert.equal(h.confirmations.length, 1); await h.confirmations[0].run(); assert.equal(h.updates.length, 1); assert.equal(h.mergeErrors.at(-1), ''); assert.ok(h.updates[0].next.people[0].aliases.includes('名'.repeat(length))); }
+  else { assert.equal(h.confirmations.length, 0); assert.match(h.errors[0], /80文字.*名前を短く/); assert.equal(h.mergeErrors.at(-1), h.errors[0]); assert.throws(() => mergePeople(data, 'demo-aoi', 'demo-ao'), /80文字/); }
   assert.deepEqual(data, before);
 });
 for (const [field, prepare, expected] of [
@@ -27,7 +27,7 @@ for (const [field, prepare, expected] of [
   ['notes', data => { data.people[0].notes = 'a'.repeat(3000); data.people[3].notes = 'b'.repeat(2999); }, /メモが6,000文字/],
 ]) test(`${field} overflow is actionable before confirmation`, () => {
   const data = fixture(); prepare(data); validateData(data); const before = structuredClone(data), h = harness(data);
-  h.run('demo-aoi', 'demo-ao'); assert.equal(h.confirmations.length, 0); assert.equal(h.updates.length, 0); assert.match(h.errors[0], expected); assert.deepEqual(data, before);
+  h.run('demo-aoi', 'demo-ao'); assert.equal(h.confirmations.length, 0); assert.equal(h.updates.length, 0); assert.match(h.errors[0], expected); assert.equal(h.mergeErrors.at(-1), h.errors[0]); assert.deepEqual(data, before);
 });
 test('duplicates are removed before the alias and tag limits are checked', () => {
   const data = fixture(); const values = Array.from({ length: 20 }, (_, i) => `alias${i}`);
@@ -45,5 +45,5 @@ test('6000 character combined notes including separator remain valid', () => {
 });
 test('confirmation rechecks current data and cannot save a later invalid merge', async () => {
   const data = fixture(), h = harness(data); h.run('demo-aoi', 'demo-ao'); assert.equal(h.confirmations.length, 1);
-  data.people[3].name = '名'.repeat(81); await h.confirmations[0].run(); assert.equal(h.updates.length, 0); assert.match(h.errors[0], /80文字/);
+  data.people[3].name = '名'.repeat(81); await h.confirmations[0].run(); assert.equal(h.updates.length, 0); assert.match(h.errors[0], /80文字/); assert.equal(h.mergeErrors.at(-1), h.errors[0]);
 });

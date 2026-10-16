@@ -44,7 +44,7 @@ function harness(namespace = null) {
     fetch: (url, options) => { const pending = deferred(); requests.push({ url, options, ...pending }); return pending.promise; },
     toast: { success: () => {}, error: () => { view.toasts = (view.toasts ?? 0) + 1; } },
   };
-  for (const name of ['ImportConfirmationInterrupted', 'ImportReview', 'ImportSource', 'ImportFilePending', 'EmptyImportConfirmed', 'State', 'Namespace', 'Revision', 'Selected', 'PersonDraft', 'AccountDraft', 'Confirmation', 'Discard', 'ImportText', 'ImportOpen', 'ExportOpen', 'Copied', 'Query', 'ServiceFilter', 'MergeTarget', 'FormError', 'Error', 'CheckingSession', 'ReadFailure', 'Busy']) {
+  for (const name of ['ImportConfirmationInterrupted', 'ImportReview', 'ImportSource', 'ImportFilePending', 'EmptyImportConfirmed', 'State', 'Namespace', 'Revision', 'Selected', 'PersonDraft', 'AccountDraft', 'Confirmation', 'Discard', 'ImportText', 'ImportOpen', 'ExportOpen', 'Copied', 'Query', 'ServiceFilter', 'MergeTarget', 'MergeError', 'MergeErrorPair', 'FormError', 'Error', 'CheckingSession', 'ReadFailure', 'Busy']) {
     const key = name[0].toLowerCase() + name.slice(1);
     context['set' + name] = value => { view[key] = value; };
   }
@@ -221,7 +221,7 @@ for (const stage of ['fetch', 'body']) test(`focus ${stage} deadline preserves a
 });
 for (const rejection of ['different-owner', '401', '403', '503', 'malformed', 'network']) test(`explicit recovery clears every draft on ${rejection} rejection`, async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
-  const h = harness(A); retainDrafts(h);
+  const h = harness(A); retainDrafts(h); h.view.mergeError = 'Synthetic previous merge failure';
   const stop = callback(monitorNode, h.context)(); const first = h.windowEvents.get('focus')();
   t.mock.timers.tick(READ_TIMEOUT_MS); await first; h.context.sessionRetry.current();
   if (rejection === 'network') h.requests[1].resolve(Promise.reject(new TypeError('synthetic network error')));
@@ -229,7 +229,7 @@ for (const rejection of ['different-owner', '401', '403', '503', 'malformed', 'n
   else h.requests[1].resolve(Response.json({ namespace: rejection === 'different-owner' ? B : A }, { status: Number(rejection) || 200 }));
   await flush();
   assert.equal(h.view.state, null); assert.equal(h.view.personDraft, null); assert.equal(h.view.accountDraft, null); assert.equal(h.view.importText, '');
-  assert.equal(h.context.namespaceRef.current, null); assert.equal(h.view.readFailure, null); assert.match(h.view.error, /ログイン/); stop();
+  assert.equal(h.context.namespaceRef.current, null); assert.equal(h.view.mergeError, ''); assert.equal(h.view.readFailure, null); assert.match(h.view.error, /ログイン/); stop();
 });
 test('a newer retry/event owns the gate even when an older deadline or successful body finishes', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
