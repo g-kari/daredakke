@@ -71,6 +71,10 @@ export function mergePeople(data: Data, target: string, source: string): Data {
   const a = data.people.find(p => p.id === target), b = data.people.find(p => p.id === source);
   if (!a || !b || target === source) throw new Error('統合する2人を選んでください。');
   const merged = { ...a, aliases: [...new Set([...a.aliases, b.name, ...b.aliases])].filter(n => n !== a.name), tags: [...new Set([...a.tags, ...b.tags])], notes: [a.notes, b.notes].filter(Boolean).join('\n\n') };
+  if (merged.aliases.some(alias => alias.length > 80)) throw new Error('統合元の名前は別名として引き継ぐため80文字までです。名前を短くしてから、もう一度統合してください。');
+  if (merged.aliases.length > 20) throw new Error('統合後の別名が20個を超えます。別名を整理してから、もう一度統合してください。');
+  if (merged.tags.length > 20) throw new Error('統合後のタグが20個を超えます。タグを整理してから、もう一度統合してください。');
+  if (merged.notes.length > 6000) throw new Error('統合後のメモが6,000文字を超えます。メモを整理してから、もう一度統合してください。');
   return validateData({ people: data.people.filter(p => p.id !== source).map(p => p.id === target ? merged : p), accounts: data.accounts.map(c => c.personId === source ? { ...c, personId: target } : c) });
 }
 export function duplicateGroups(data: Data): Account[][] {

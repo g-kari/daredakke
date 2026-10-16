@@ -334,6 +334,7 @@ export default function FriendRecord() {
   async function link(a: Account, target: string) { await update({ ...data, accounts: data.accounts.map(c => c.id === a.id ? { ...c, personId: target === 'none' ? null : target } : c) }, target === 'none' ? '紐づけを解除しました' : 'アカウントを紐づけました'); }
   function confirmMerge(target: string, source: string) {
     const a = data.people.find(p => p.id === target), b = data.people.find(p => p.id === source); if (!a || !b || a.id === b.id) return;
+    try { mergePeople(data, target, source); } catch (e) { toast.error((e as Error).message); return; }
     setConfirmation({ title: 'この2人を統合しますか？', message: `「${b.name}」を「${a.name}」にまとめます。別名・タグ・メモ・アカウントを引き継ぎます。名前だけでは同一人物と判定していません。直近10操作は元に戻せます。`, action: '統合する', run: async () => { try { if (await update(mergePeople(data, target, source), '2人の記録を統合しました')) { setSelected(target); setMergeTarget('none'); } } catch (e) { toast.error((e as Error).message); } } });
   }
   function removePerson(p: Person) { setConfirmation({ title: '人の記録を削除しますか？', message: `「${p.name}」の記録を削除します。アカウントは未整理へ移します。元に戻すこともできます。`, action: '人の記録を削除', run: async () => { if (await update({ people: data.people.filter(c => c.id !== p.id), accounts: data.accounts.map(a => a.personId === p.id ? { ...a, personId: null } : a) }, '人の記録を削除しました')) setSelected(null); } }); }
