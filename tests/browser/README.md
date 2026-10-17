@@ -1,6 +1,6 @@
 # 画面と入力破棄のブラウザー回帰テスト
 
-npm ci 後、npx playwright install chromium と npm run test:browser で実行します。
+pnpm install --frozen-lockfile 後、pnpm exec playwright install chromium と pnpm run test:browser で実行します。
 
 通常のvite buildで生成した実画面をlocalhostのpreviewで開き、Playwright側で /api/session と /api/records を架空データに置き換えます。本番の認証・API・D1は使わず、localhost以外への通信を遮断します。実装にデモ用の認証回避やテスト入口を追加しません。
 

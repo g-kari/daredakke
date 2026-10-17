@@ -22,7 +22,7 @@ export default defineConfig({
   ],
   webServer: {
     cwd: repoRoot,
-    command: 'npm run build && npm exec -- vite preview --host 127.0.0.1 --port 4317 --strictPort',
+    command: 'pnpm run build && pnpm exec vite preview --host 127.0.0.1 --port 4317 --strictPort',
     url: 'http://127.0.0.1:4317',
     reuseExistingServer: !process.env.CI,
     timeout: 60000,

@@ -25,15 +25,17 @@ Cloudflare Workers + D1版は https://daredakke.0g0.xyz に本人限定で配備
 
 Node.js 22.13以上が必要です。クラウドへの認証やAPIトークンは不要です。
 
-1. npm ci
-2. npm run types
-3. npm run check
-4. npm run db:local
-5. npm run dry-run
+pnpm 11.25.0を使用します。未導入なら `npm install --global pnpm@11.25.0` で固定版を準備してください。依存関係は `pnpm-lock.yaml` を正として、CIと同じfrozen installを使います。Node.jsの既存要件は変更しません。
 
-checkは型検証・暗号検証・実際のローカルD1を使うAPIテスト・画面のビルドを実行します。未保存入力の実画面テストはnpx playwright install chromiumの後にnpm run test:browserで別途実行できます。架空のAPI応答だけを使い、Cloudflare本番や外部サービスには接続しません。詳細は[ブラウザー回帰テスト](tests/browser/README.md)を参照してください。db:localはローカルD1のみにマイグレーションを適用します。dry-runは配備せずにWorkerを束ねます。
+1. pnpm install --frozen-lockfile
+2. pnpm run types
+3. pnpm run check
+4. pnpm run db:local
+5. pnpm run dry-run
 
-本番認証設定が空のままでは、画面もAPIも503で拒否します。npm run devで公開可能な認証バイパスは用意していません。npm run deployは準備版では意図的に停止します。
+checkは型検証・暗号検証・実際のローカルD1を使うAPIテスト・画面のビルドを実行します。未保存入力の実画面テストはpnpm exec playwright install chromiumの後にpnpm run test:browserで別途実行できます。架空のAPI応答だけを使い、Cloudflare本番や外部サービスには接続しません。詳細は[ブラウザー回帰テスト](tests/browser/README.md)を参照してください。db:localはローカルD1のみにマイグレーションを適用します。dry-runは配備せずにWorkerを束ねます。
+
+本番認証設定が空のままでは、画面もAPIも503で拒否します。pnpm run devで公開可能な認証バイパスは用意していません。pnpm run deployは準備版では意図的に停止します。
 
 ## 本人専用認証
 
@@ -58,11 +60,11 @@ WorkerはCf-Access-Jwt-AssertionのRS256署名・issuer・audience・期限・no
 
 ## 本番へ進める前
 
-画面の配布には2通りあります。通常のwrangler.jsoncはCloudflare Static Assets用です。API経由でupload-sessionの認証を扱えない接続では、npm run bundle:workerで画面を同じWorkerのbundleに含められます。どちらも元の認証入口を先に通り、別の公開Workerや資格情報は不要です。bundle方式は合計1MB・100個までのUTF-8ファイルに限定します。通常のStatic Assetsとは異なり、静的応答にもWorkerの利用量がかかります。
+画面の配布には2通りあります。通常のwrangler.jsoncはCloudflare Static Assets用です。API経由でupload-sessionの認証を扱えない接続では、pnpm run bundle:workerで画面を同じWorkerのbundleに含められます。どちらも元の認証入口を先に通り、別の公開Workerや資格情報は不要です。bundle方式は合計1MB・100個までのUTF-8ファイルに限定します。通常のStatic Assetsとは異なり、静的応答にもWorkerの利用量がかかります。
 
 docs/DEPLOYMENT.mdのチェックリストに従ってください。ソースはユーザーが用意した [g-kari/daredakke](https://github.com/g-kari/daredakke) で管理します。CIは型検証・テスト・ローカルD1・配備しないdry-runだけを実行し、Cloudflareへ配備しません。
 
-D1のdatabase_idはローカル用の置換必須値です。承認後に対象アカウント、データベース、本人専用ドメイン、Accessアプリを確認し、実際の値へ置き換えます。設定後はnpm run typesをやり直します。
+D1のdatabase_idはローカル用の置換必須値です。承認後に対象アカウント、データベース、本人専用ドメイン、Accessアプリを確認し、実際の値へ置き換えます。設定後はpnpm run typesをやり直します。
 
 ## 保存と互換性
 
