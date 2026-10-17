@@ -19,7 +19,7 @@ Accessは新たな本人認証・アクセス制御の設定です。既存設�
 2. D1とAccessが対象アカウント/ホストに一致することを確認する
 3. wrangler.jsoncのローカル用database_id/nameと空のvarsを実際の承認済み値にする
 4. ドメインのAccess保護を先に確立し、workers.devとpreview URLが無効であることを確認する
-5. npm ci、npm run types、npm run check、npm run dry-runを実行する
+5. pnpm install --frozen-lockfile、pnpm run types、pnpm run check、pnpm run dry-runを実行する
 6. 対象D1へのマイグレーション適用を承認範囲内で行う
 7. 対象ホストへの配備を承認範囲内で行う
 8. 匿名・別アカウント・本人で画面とAPIの境界を確認する
@@ -37,7 +37,7 @@ Accessは新たな本人認証・アクセス制御の設定です。既存設�
 
 ## 1 Workerの静的bundle方式
 
-Cloudflare Static AssetsのDirect Uploadはupload-session JWTを使うため、接続がその認証方式を扱えない場合はwrangler.bundled.jsoncを使います。npm run bundle:workerはfrontend build、UTF-8 byte/hash検査、同じWorkerに含めるJSON生成、配備しないWorker dry-runを実行します。生成物は.gitignore対象です。秘密や実データのファイルを読みません。
+Cloudflare Static AssetsのDirect Uploadはupload-session JWTを使うため、接続がその認証方式を扱えない場合はwrangler.bundled.jsoncを使います。pnpm run bundle:workerはfrontend build、UTF-8 byte/hash検査、同じWorkerに含めるJSON生成、配備しないWorker dry-runを実行します。生成物は.gitignore対象です。秘密や実データのファイルを読みません。
 
 src/worker/bundled.tsは元のauth-first handlerに静的応答を渡します。認証を迂回する公開経路、追加Worker、外部fetchによるasset proxyはありません。GET/HEAD、固定MIME、未知assetの404、private/no-storeを検証しています。
 

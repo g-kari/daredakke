@@ -4,18 +4,19 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22.13.0"
+    "node": ">=22.13.0",
+    "pnpm": "11.25.0"
   },
   "scripts": {
     "build": "vite build",
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
-    "check": "npm run typecheck && npm test && npm run build",
+    "check": "pnpm run typecheck && pnpm test && pnpm run build",
     "dev": "wrangler dev --local",
     "types": "wrangler types",
     "db:local": "wrangler d1 migrations apply DB --local",
-    "dry-run": "npm run build && wrangler deploy --dry-run",
-    "bundle:worker": "npm run build && node scripts/generate-static-assets.mjs && wrangler deploy --config wrangler.bundled.jsonc --dry-run --outdir dist-worker-bundled",
+    "dry-run": "pnpm run build && wrangler deploy --dry-run",
+    "bundle:worker": "pnpm run build && node scripts/generate-static-assets.mjs && wrangler deploy --config wrangler.bundled.jsonc --dry-run --outdir dist-worker-bundled",
     "deploy": "node scripts/deny-unapproved-deploy.mjs",
     "test:browser": "playwright test --config tests/browser/playwright.config.mjs"
   },
@@ -45,5 +46,6 @@
     "typescript": "5.9.3",
     "vite": "8.3.4",
     "wrangler": "^4.149.0"
-  }
+  },
+  "packageManager": "pnpm@11.25.0"
 }
