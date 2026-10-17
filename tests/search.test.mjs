@@ -11,8 +11,11 @@ const ids = people => people.map(person => person.id);
 const find = (query, service = 'all', records = data) => ids(searchPeople(records, createRecordSearch(query), service));
 const source = ts.createSourceFile('app.tsx', fs.readFileSync(new URL('../src/app.tsx', import.meta.url), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const declarations = new Map();
-let toolExecute;
+let toolExecute, inspectRecordClick;
 function visit(node) {
+  if (ts.isJsxElement(node) && node.openingElement.tagName.getText(source) === 'Button' && node.children.some(child => ts.isJsxText(child) && child.text.trim() === '記録を確認')) {
+    inspectRecordClick = node.openingElement.attributes.properties.find(property => ts.isJsxAttribute(property) && property.name.text === 'onClick')?.initializer?.expression;
+  }
   if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) declarations.set(node.name.text, node);
   if (ts.isObjectLiteralExpression(node) && node.properties.some(property => ts.isPropertyAssignment(property) && property.name.getText(source) === 'name' && property.initializer.getText(source) === "'search_friend_records'")) {
     toolExecute = node.properties.find(property => ts.isPropertyAssignment(property) && property.name.getText(source) === 'execute')?.initializer;
@@ -145,4 +148,64 @@ test('the same registered callback searches only the latest current-scope state'
   h.context.stateRef.current = { data: other };
   assert.deepEqual(h.run({ query: 'あおい' }).people, []);
   assert.deepEqual(ids(h.run({ query: 'New current' }).people), ['other']);
+});
+
+// A duplicate group may match one row while the requested unresolved row does not.
+const inspectionRecords = {
+  people: [{ id: 'luna', name: 'ルナ', aliases: [], tags: [], notes: '', color: '#4f5fcb' }],
+  accounts: [
+    { id: 'linked', personId: 'luna', service: 'X', label: '@luna_demo [photo]', url: 'https://x.com/luna_fixture', key: 'X:luna_fixture' },
+    { id: 'unresolved', personId: null, service: 'X', label: '@other_echo', url: 'https://x.com/luna_fixture', key: 'X:luna_fixture' },
+  ],
+};
+function inspectDuplicate(account, query, service = 'X') {
+  assert.ok(inspectRecordClick, 'actual duplicate inspection callback exists');
+  const view = { query, service, tab: 'duplicates', selected: 'previous', calls: [] };
+  const context = { a: account, accountMatch: runUi(query, service, inspectionRecords).accountMatch };
+  for (const [name, key] of [['Query', 'query'], ['ServiceFilter', 'service'], ['Tab', 'tab'], ['Selected', 'selected']]) {
+    context['set' + name] = value => { view[key] = value; view.calls.push(key); };
+  }
+  const before = JSON.stringify(inspectionRecords);
+  new Function(...Object.keys(context), compile('return ' + inspectRecordClick.getText(source) + ';'))(...Object.values(context))();
+  assert.equal(JSON.stringify(inspectionRecords), before, 'inspection never mutates stored records');
+  return view;
+}
+test('duplicate inspection reveals an unresolved row hidden by another row matching the query', () => {
+  const account = inspectionRecords.accounts[1];
+  for (const query of ['ルナ [photo]', '[photo]　ルナ', 'ルナ']) {
+    for (const service of ['X', 'all']) {
+      const before = runUi(query, service, inspectionRecords);
+      assert.equal(duplicateGroups(inspectionRecords).some(group => group.some(before.accountMatch)), true);
+      assert.equal(before.accountMatch(account), false);
+      const view = inspectDuplicate(account, query, service);
+      assert.equal(view.tab, 'unresolved');
+      assert.equal(view.query, '');
+      assert.equal(view.service, service, 'the applicable service filter is preserved');
+      assert.equal(view.selected, 'previous');
+      assert.deepEqual(view.calls.sort(), ['query', 'tab']);
+      assert.equal(runUi(view.query, view.service, inspectionRecords).accountMatch(account), true);
+    }
+  }
+});
+test('duplicate inspection preserves raw search input when the unresolved row already matches', () => {
+  const account = inspectionRecords.accounts[1];
+  for (const query of ['luna_fixture X', '@other_echo', '', '　 ']) {
+    for (const service of ['X', 'all']) {
+      assert.equal(runUi(query, service, inspectionRecords).accountMatch(account), true);
+      const view = inspectDuplicate(account, query, service);
+      assert.equal(view.tab, 'unresolved');
+      assert.equal(view.query, query);
+      assert.equal(view.service, service);
+      assert.equal(view.selected, 'previous');
+      assert.deepEqual(view.calls, ['tab']);
+    }
+  }
+});
+test('duplicate inspection preserves the existing linked-person navigation', () => {
+  const view = inspectDuplicate(inspectionRecords.accounts[0], '@other_echo');
+  assert.equal(view.selected, 'luna');
+  assert.equal(view.tab, 'people');
+  assert.equal(view.query, '');
+  assert.equal(view.service, 'all');
+  assert.deepEqual(view.calls.sort(), ['query', 'selected', 'service', 'tab']);
 });

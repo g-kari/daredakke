@@ -210,6 +210,43 @@ test('unresolved and duplicate filters require all clues on one existing account
   await screenshot(page, info, 'duplicate-clues');
 });
 
+test('duplicate inspection reveals a hidden unresolved row and keeps its service filter', async ({ page }, info) => {
+  const api = await start(page);
+  const initialRequests = api.requests.length;
+  await page.getByRole('button', { name: 'X', exact: true }).click();
+  for (const query of ['ルナ [photo]', '[photo]　ルナ']) {
+    await page.getByRole('tab', { name: '重複候補' }).click();
+    await search(page).fill(query);
+    const target = page.locator('.duplicate-owners>div').filter({ has: page.getByText('@other_echo', { exact: true }) });
+    await expect(target).toHaveCount(1);
+    await target.getByRole('button', { name: '記録を確認', exact: true }).click();
+    await expect(page.getByRole('tab', { name: '未整理' })).toHaveAttribute('aria-selected', 'true');
+    await expect(search(page)).toHaveValue('');
+    await expect(page.getByRole('button', { name: 'X', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('.workspace-detail .account-row').getByText('@other_echo', { exact: true })).toBeVisible();
+  }
+  await noOverflow(page);
+  await screenshot(page, info, 'duplicate-unresolved-inspection');
+  expect(api.requests).toHaveLength(initialRequests);
+});
+
+test('duplicate inspection keeps matching search input for an already visible unresolved row', async ({ page }) => {
+  const api = await start(page);
+  const initialRequests = api.requests.length;
+  await page.getByRole('button', { name: 'X', exact: true }).click();
+  for (const query of ['luna_fixture X', '@other_echo']) {
+    await page.getByRole('tab', { name: '重複候補' }).click();
+    await search(page).fill(query);
+    const target = page.locator('.duplicate-owners>div').filter({ has: page.getByText('@other_echo', { exact: true }) });
+    await target.getByRole('button', { name: '記録を確認', exact: true }).click();
+    await expect(page.getByRole('tab', { name: '未整理' })).toHaveAttribute('aria-selected', 'true');
+    await expect(search(page)).toHaveValue(query);
+    await expect(page.getByRole('button', { name: 'X', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('.workspace-detail .account-row').getByText('@other_echo', { exact: true })).toBeVisible();
+  }
+  expect(api.requests).toHaveLength(initialRequests);
+});
+
 test('simulated WebMCP results match UI people fields order and repeated calls without writes', async ({ page }) => {
   const api = await start(page);
   const initialRequests = api.requests.length;
