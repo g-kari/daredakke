@@ -151,7 +151,9 @@ async function closeProfile(page, info, method = 'Escape') {
   if (method === 'Close') await profile(page, info).getByRole('button', { name: 'Close', exact: true }).click();
   else await page.keyboard.press('Escape');
   await expect(profile(page, info)).toHaveCount(0);
+  await expect(page.locator('.person-sheet')).toHaveCount(0);
   await expect(createdRow(page)).toBeVisible();
+  await expect(createdRow(page)).toBeFocused();
 }
 
 const searches = [
@@ -167,6 +169,9 @@ for (const search of searches) {
     await openDraft(page); await saveDraft(page);
     expectOneCreation(api);
     await expectCreated(page, info, { query: search.expected, clearedQuery: search.query !== search.expected });
+    if (search.label === 'empty search') await info.attach('new-person-visible', {
+      body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png',
+    });
     await closeProfile(page, info);
     // Normal navigation must not change or duplicate the saved record.
     await page.getByRole('tab', { name: /^未整理/ }).click();
