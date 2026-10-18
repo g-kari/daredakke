@@ -17,7 +17,7 @@ import { identityChanged, readNamespace, readSessionFile, verifyLoadedNamespace,
 import { readJson, ReadTimeoutError } from '@/lib/reads';
 import { buildImportReview, type ImportReview } from '@/domain/import-review';
 import { createRecordSearch, searchPeople } from '@/domain/search';
-import { type Person, type Account, type Service, type Data, type RecordState, colors, demoData, empty, normalizeAccount, validateData, change, undoChange, mergePeople, duplicateGroups, parseImport, exportData } from '@/domain/records';
+import { type Person, type Account, type Service, type Data, type RecordState, colors, demoData, empty, normalizeAccount, validateData, sameRecordData, change, undoChange, mergePeople, duplicateGroups, parseImport, exportData } from '@/domain/records';
 
 type DraftKind = 'person' | 'account' | 'import';
 type DraftFocus = { kind: DraftKind; target: HTMLElement; dialog: HTMLElement; epoch: number };
@@ -312,7 +312,15 @@ export default function FriendRecord() {
     } catch (e) { if (epoch !== identityEpoch.current || expected !== namespaceRef.current) return false; const message = e instanceof Error ? e.message : '保存できませんでした。'; setError(message); setFormError(message); toast.error(message); return false; }
     finally { setBusy(false); }
   }
-  async function update(next: Data, label: string) { if (!state) return false; try { return await save(change(state, next, label), label); } catch (e) { const msg = (e as Error).message; setFormError(msg); toast.error(msg); return false; } }
+  async function update(next: Data, label: string, skipUnchangedEdit = false) {
+    if (!state || busy || sessionPending.current || !namespace || namespace !== namespaceRef.current) return false;
+    try {
+      if (skipUnchangedEdit && sameRecordData(state.data, next)) {
+        setFormError(''); toast.info('変更はありません。記録と復元履歴はそのままです。'); return true;
+      }
+      return await save(change(state, next, label), label);
+    } catch (e) { const msg = (e as Error).message; setFormError(msg); toast.error(msg); return false; }
+  }
   function editPerson(p?: Person) {
     const draft = p ? { id: p.id, name: p.name, aliases: p.aliases.join(', '), tags: p.tags.join(', '), notes: p.notes } : blankPerson();
     requestDiscard(personDraftChanged(personDraft, personDraftInitial.current), () => { clearDraftFocus('person'); setFormError(''); personDraftInitial.current = draft; setPersonDraft(draft); });
@@ -325,7 +333,7 @@ export default function FriendRecord() {
     e.preventDefault(); if (!personDraft) return;
     const draft = personDraft, old = data.people.find(p => p.id === draft.id);
     const next: Person = { id: draft.id || crypto.randomUUID(), name: draft.name.trim(), aliases: old && draft.aliases === old.aliases.join(', ') ? old.aliases : split(draft.aliases), tags: old && draft.tags === old.tags.join(', ') ? old.tags : split(draft.tags), notes: draft.notes, color: old?.color || colors[data.people.length % colors.length] };
-    if (await update({ ...data, people: old ? data.people.map(p => p.id === old.id ? next : p) : [...data.people, next] }, old ? '人の記録を更新しました' : '人を追加しました')) {
+    if (await update({ ...data, people: old ? data.people.map(p => p.id === old.id ? next : p) : [...data.people, next] }, old ? '人の記録を更新しました' : '人を追加しました', !!old)) {
       clearDraftFocus('person'); personDraftInitial.current = null; setPersonDraft(null); setSelected(next.id);
       if (!old) {
         profileFocus.current = { target: null, epoch: identityEpoch.current, personId: next.id };
@@ -345,7 +353,7 @@ export default function FriendRecord() {
     try {
       const normalized = normalizeAccount(accountDraft.service, accountDraft.url);
       const next: Account = { id: accountDraft.id || crypto.randomUUID(), service: accountDraft.service, label: accountDraft.label.trim() || normalized.key.split(':')[1], personId: accountDraft.personId === 'none' ? null : accountDraft.personId, ...normalized };
-      if (await update({ ...data, accounts: accountDraft.id ? data.accounts.map(a => a.id === accountDraft.id ? next : a) : [...data.accounts, next] }, accountDraft.id ? 'アカウントを更新しました' : 'アカウントを追加しました')) { clearDraftFocus('account'); accountDraftInitial.current = null; setAccountDraft(null); }
+      if (await update({ ...data, accounts: accountDraft.id ? data.accounts.map(a => a.id === accountDraft.id ? next : a) : [...data.accounts, next] }, accountDraft.id ? 'アカウントを更新しました' : 'アカウントを追加しました', !!accountDraft.id && data.accounts.some(a => a.id === accountDraft.id))) { clearDraftFocus('account'); accountDraftInitial.current = null; setAccountDraft(null); }
     } catch (e) { setFormError((e as Error).message); }
   }
   async function link(a: Account, target: string) { await update({ ...data, accounts: data.accounts.map(c => c.id === a.id ? { ...c, personId: target === 'none' ? null : target } : c) }, target === 'none' ? '紐づけを解除しました' : 'アカウントを紐づけました'); }

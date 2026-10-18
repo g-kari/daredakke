@@ -62,6 +62,11 @@ export function validateState(raw: unknown): RecordState {
   if (!Array.isArray(o.undo) || o.undo.length > 10) throw new Error('履歴の形式が正しくありません。');
   const undo = o.undo.map(value => { const u = object(value); return { label: text(u.label, 120, '履歴'), at: text(u.at, 40, '日時'), data: validateData(u.data) }; }); return { data, undo };
 }
+// Compare the exact validated stored shape, including record and alias/tag order.
+// Callers opt in only for editing an existing record; import/undo keep their semantics.
+export function sameRecordData(before: Data, after: Data): boolean {
+  return JSON.stringify(validateData(before)) === JSON.stringify(validateData(after));
+}
 export function change(state: RecordState, data: Data, label: string): RecordState {
   const next = { data: validateData(data), undo: [{ label, at: new Date().toISOString(), data: state.data }, ...state.undo].slice(0, 10) };
   if (new TextEncoder().encode(JSON.stringify(next)).byteLength > 850000 || new TextEncoder().encode(exportData(next.data)).byteLength > 900000) throw new Error('保存容量の上限です。JSONを書き出して記録を整理してください。'); return next;
