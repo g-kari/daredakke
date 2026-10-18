@@ -44,7 +44,10 @@ for (const kind of ['person', 'account']) test(`ten unchanged ${kind} saves pres
     expect(api.posts).toHaveLength(0); expect(api.state).toEqual(initial);
     if (repeat === 0) await info.attach(`unchanged-${kind}`, { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
   }
-  if (kind === 'person' && info.project.use.isMobile) await page.keyboard.press('Escape');
+  if (kind === 'person' && info.project.use.isMobile) {
+    await personProfile(page, info).getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(personProfile(page, info)).toHaveCount(0);
+  }
   await page.getByRole('button', { name: '元に戻す', exact: true }).click();
   await expect.poll(() => api.posts.length).toBe(1);
   expect(api.state.data).toEqual(api.before); expect(api.state.undo).toEqual([]);
@@ -70,7 +73,10 @@ test('canonical unchanged fields do not save; a real edit fails safely then expl
   await editor(page).getByRole('button', { name: '保存する', exact: true }).click();
   await expect(editor(page)).toHaveCount(0); expect(api.posts).toHaveLength(2);
   expect(api.state.data.people[0].notes).toBe('A real new synthetic note'); expect(api.state.undo).toHaveLength(2);
-  if (info.project.use.isMobile) await page.keyboard.press('Escape');
+  if (info.project.use.isMobile) {
+    await personProfile(page, info).getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(personProfile(page, info)).toHaveCount(0);
+  }
   await page.getByRole('button', { name: '元に戻す', exact: true }).click();
   await expect.poll(() => api.posts.length).toBe(3); expect(api.state).toEqual(initial); expect(api.errors).toEqual([]);
 });
