@@ -15,8 +15,8 @@ const activeTab = page => page.locator('[role="tab"][data-state="active"]');
 // is open; interactions occur only before the sheet/modal makes it inert.
 const service = (page, name) => page.locator('.service-filter').filter({ hasText: name });
 const createdRow = page => page.locator('.account-row').filter({ hasText: 'Created voice' });
-async function start(page) {
-  const api = { state: { data: fixture(), undo: [] }, revision: 0, posts: [], errors: [], denied: [], failure: null, pause: null };
+async function start(page, initialData = fixture()) {
+  const api = { state: { data: initialData, undo: [] }, revision: 0, posts: [], errors: [], denied: [], failure: null, pause: null };
   fixtures.set(page, api);
   page.on('pageerror', error => api.errors.push(error.message));
   await page.context().route('**/*', async route => {
@@ -114,4 +114,27 @@ test('two explicit additions produce two distinct records with no hidden retry',
   expect(api.posts).toHaveLength(2); expect(api.state.undo).toHaveLength(2);
   const created = api.state.data.accounts.filter(a => a.label === 'Created voice'); expect(created).toHaveLength(2); expect(new Set(created.map(a => a.id)).size).toBe(2);
   await expect(createdRow(page)).toHaveCount(2);
+});
+
+// Long synthetic records expose viewport regressions that DOM visibility alone
+// cannot detect. No scrolling/focusing from the test after save is permitted.
+for (const linked of [false, true]) test(`new ${linked ? 'linked' : 'unlinked'} account is revealed in a long viewport`, async ({ page }, info) => {
+  const data = fixture();
+  data.people[1].notes = Array.from({ length: 35 }, (_, i) => `Synthetic note line ${i}`).join('\n');
+  data.accounts.push(...Array.from({ length: 25 }, (_, i) => ({
+    id: `long-${i}`, service: 'X', label: `Synthetic previous ${i}`,
+    personId: linked ? 'target' : null, url: `https://x.com/synthetic_${i}`, key: `X:synthetic_${i}`,
+  })));
+  const api = await start(page, data); const dialog = await editor(page);
+  if (linked) {
+    await dialog.getByRole('combobox', { name: 'アカウントの紐づけ先' }).click();
+    await page.getByRole('option', { name: 'Target person', exact: true }).click();
+  }
+  await save(dialog); await expect(dialog).toBeHidden();
+  await expect(createdRow(page)).toBeInViewport({ ratio: 0.8 });
+  const focus = page.locator(':focus'); await expect(focus).toBeVisible();
+  await expect(focus).not.toHaveJSProperty('tagName', 'BODY');
+  await expect(focus).toBeInViewport();
+  expect(api.posts).toHaveLength(1); expect(api.state.undo).toHaveLength(1);
+  await page.screenshot({ path: `test-results/new-account/${info.project.name}-${linked ? 'linked' : 'unlinked'}-long.png`, fullPage: false });
 });
