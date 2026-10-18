@@ -25,7 +25,7 @@ function harness() {
   const context = {
     busy: false, scope: 'demo', personDirty: true, accountDirty: false, importDirty: false, hasUnsavedChanges: true,
     identityEpoch: { current: 4 }, importReadEpoch: { current: 8 }, sessionPending: { current: false },
-    personDraftInitial: { current: { name: '', aliases: '', tags: '', notes: '' } }, accountDraftInitial: { current: null }, draftFocus: { current: null }, discardFocus: { current: null },
+    personDraftInitial: { current: { name: '', aliases: '', tags: '', notes: '' } }, accountDraftInitial: { current: null }, accountReveal: { current: null }, draftFocus: { current: null }, discardFocus: { current: null },
     personDraft: draft, accountDraft: null, discard: null,
     document: { activeElement: null }, HTMLElement: class {}, personDraftChanged, accountDraftChanged,
     blankPerson: () => ({ name: '', aliases: '', tags: '', notes: '' }),

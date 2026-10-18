@@ -16,7 +16,7 @@ const activeTab = page => page.locator('[role="tab"][data-state="active"]');
 const service = (page, name) => page.locator('.service-filter').filter({ hasText: name });
 const createdRow = page => page.locator('.account-row').filter({ hasText: 'Created voice' });
 async function start(page, initialData = fixture()) {
-  const api = { state: { data: initialData, undo: [] }, revision: 0, posts: [], errors: [], denied: [], failure: null, pause: null };
+  const api = { state: { data: initialData, undo: [] }, revision: 0, posts: [], errors: [], denied: [], failure: null, pause: null, sessionPause: null, sessionCalls: 0 };
   fixtures.set(page, api);
   page.on('pageerror', error => api.errors.push(error.message));
   await page.context().route('**/*', async route => {
@@ -24,7 +24,7 @@ async function start(page, initialData = fixture()) {
     const deny = reason => { api.denied.push(reason); return route.abort(); };
     if (url.origin !== origin) return deny('external request');
     if (!url.pathname.startsWith('/api/')) return request.method() === 'GET' ? route.continue() : deny('non-GET asset');
-    if (url.pathname === '/api/session' && !url.search && request.method() === 'GET') return route.fulfill({ json: { namespace } });
+    if (url.pathname === '/api/session' && !url.search && request.method() === 'GET') { api.sessionCalls++; if (api.sessionPause) await api.sessionPause; return route.fulfill({ json: { namespace } }); }
     if (url.pathname !== '/api/records') return deny('unexpected API');
     if (request.method() === 'GET' && url.searchParams.get('scope') === 'demo' && url.searchParams.size === 1) return route.fulfill({ json: { namespace, state: api.state, revision: api.revision } });
     if (request.method() !== 'POST' || url.search) return deny('unexpected method or query');
@@ -132,9 +132,27 @@ for (const linked of [false, true]) test(`new ${linked ? 'linked' : 'unlinked'} 
   }
   await save(dialog); await expect(dialog).toBeHidden();
   await expect(createdRow(page)).toBeInViewport({ ratio: 0.8 });
+  await expect(createdRow(page)).toBeFocused();
   const focus = page.locator(':focus'); await expect(focus).toBeVisible();
   await expect(focus).not.toHaveJSProperty('tagName', 'BODY');
   await expect(focus).toBeInViewport();
   expect(api.posts).toHaveLength(1); expect(api.state.undo).toHaveLength(1);
   await page.screenshot({ path: `test-results/new-account/${info.project.name}-${linked ? 'linked' : 'unlinked'}-long.png`, fullPage: false });
+});
+
+test('accepted save while its modal is gated resumes row reveal after same-owner verification', async ({ page }) => {
+  const data = fixture();
+  data.accounts.push(...Array.from({ length: 25 }, (_, i) => ({ id: `pending-${i}`, service: 'X', label: `Pending previous ${i}`, personId: null, url: `https://x.com/pending_${i}`, key: `X:pending_${i}` })));
+  const api = await start(page, data); let saveDone, checkDone;
+  api.pause = new Promise(resolve => { saveDone = resolve; });
+  const dialog = await editor(page); await save(dialog); await expect.poll(() => api.posts.length).toBe(1);
+  api.sessionPause = new Promise(resolve => { checkDone = resolve; });
+  const callsBefore = api.sessionCalls; await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect.poll(() => api.sessionCalls).toBeGreaterThan(callsBefore);
+  await expect(page.getByText('ログインを確認しています…', { exact: true })).toBeVisible();
+  const accepted = page.waitForResponse(response => response.url().endsWith('/api/records') && response.request().method() === 'POST');
+  saveDone(); await (await accepted).finished(); await expect.poll(() => api.state.undo.length).toBe(1);
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  checkDone(); await expect(createdRow(page)).toBeInViewport({ ratio: 0.8 }); await expect(createdRow(page)).toBeFocused();
+  expect(api.posts).toHaveLength(1); expect(api.state.undo).toHaveLength(1);
 });

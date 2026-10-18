@@ -29,7 +29,7 @@ function harness({ query = '', service = 'all', tab = 'people', owner = 'none', 
   const view = { query, serviceFilter: service, tab, selected: 'demo-sora', accountDraft: draft, state: { data, undo: [] }, notices: [], error: '', clears: [] };
   const updates = [];
   const context = { data, accountDraft: draft, normalizeAccount, createRecordSearch, searchPeople,
-    filtersRef: { current: { query, serviceFilter: service } }, profileFocus: { current: null }, identityEpoch: { current: 0 }, namespaceRef: { current: 'synthetic-owner-A' },
+    filtersRef: { current: { query, serviceFilter: service } }, profileFocus: { current: null }, accountReveal: { current: null }, accountDialog: { current: { isConnected: true } }, identityEpoch: { current: 0 }, namespaceRef: { current: 'synthetic-owner-A' },
     crypto: { randomUUID: () => 'synthetic-created-account' }, accountDraftInitial: { current: draft },
     clearDraftFocus: kind => view.clears.push(kind), setFormError: value => { view.error = value; },
     toast: { info: value => view.notices.push(value) },
@@ -122,3 +122,65 @@ for (const owner of ['none', 'demo-yuki']) for (const identityChange of ['epoch'
     assert.equal(h.view.selected, null); assert.equal(h.context.profileFocus.current, null); assert.deepEqual(h.view.notices, []); assert.deepEqual(h.view.clears, []);
   });
 }
+
+// Execute the actual one-shot reveal scheduler with synthetic frame/DOM ports.
+function revealHarness(overrides = {}) {
+  const calls = [], frames = new Map(); let serial = 0;
+  const target = { isConnected: true, focus: options => calls.push(['focus', options]), scrollIntoView: options => calls.push(['scroll', options]) };
+  const intent = { id: 'created', personId: null, epoch: 7, namespace: 'owner', ready: true, query: '', serviceFilter: 'all' };
+  const context = { accountReveal: { current: intent }, accountRows: { current: new Map([['created', target]]) }, accountRevealFrame: { current: null }, stateRef: { current: { data: { accounts: [{ id: 'created' }] } } }, identityEpoch: { current: 7 }, namespaceRef: { current: 'owner' }, sessionPending: { current: false }, checkingSession: false, tab: 'unresolved', selected: null, revealView: { current: { tab: 'unresolved', selected: null } }, filtersRef: { current: { query: '', serviceFilter: 'all' } },
+    requestAnimationFrame: callback => { frames.set(++serial, callback); return serial; }, cancelAnimationFrame: id => frames.delete(id), ...overrides };
+  const run = new Function('c', `with(c) { ${compile(functions.get('revealCreatedAccount').getText(source))}; revealCreatedAccount(); }`);
+  return { context, intent, target, calls, run: () => run(context), flush: () => { const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(callback => callback()); }, frames };
+}
+test('accepted new-account reveal focuses and scrolls once, then consumes intent', () => {
+  const h = revealHarness(); h.run(); assert.equal(h.calls.length, 0); h.flush();
+  assert.deepEqual(h.calls, [['focus', { preventScroll: true }], ['scroll', { block: 'center', behavior: 'auto' }]]);
+  assert.equal(h.context.accountReveal.current, null); h.run(); h.flush(); assert.equal(h.calls.length, 2);
+});
+for (const key of ['epoch', 'namespace', 'tab', 'owner', 'removed']) test(`reveal cancels stale ${key} before scheduling`, () => {
+  const h = revealHarness();
+  if (key === 'epoch') h.context.identityEpoch.current++;
+  if (key === 'namespace') h.context.namespaceRef.current = 'other';
+  if (key === 'tab') h.context.tab = 'people';
+  if (key === 'owner') h.context.selected = 'other';
+  if (key === 'removed') { h.context.accountRows.current.clear(); h.context.stateRef.current.data.accounts = []; }
+  h.run(); h.flush(); assert.deepEqual(h.calls, []); assert.equal(h.context.accountReveal.current, null);
+});
+for (const key of ['identity', 'namespace', 'pending', 'disconnected', 'new-intent', 'query', 'service', 'navigation']) test(`scheduled reveal cannot run after ${key} changes`, () => {
+  const h = revealHarness(); h.run();
+  if (key === 'identity') h.context.identityEpoch.current++;
+  if (key === 'namespace') h.context.namespaceRef.current = 'other';
+  if (key === 'pending') h.context.sessionPending.current = true;
+  if (key === 'disconnected') h.target.isConnected = false;
+  if (key === 'new-intent') h.context.accountReveal.current = { ...h.intent };
+  if (key === 'query') h.context.filtersRef.current.query = 'new';
+  if (key === 'service') h.context.filtersRef.current.serviceFilter = 'X';
+  if (key === 'navigation') h.context.revealView.current.tab = 'people';
+  h.flush(); assert.deepEqual(h.calls, []);
+});
+test('same-owner verification defers reveal, then resumes without a save', () => {
+  const h = revealHarness(); h.context.sessionPending.current = true; h.run(); assert.equal(h.frames.size, 0); assert.equal(h.context.accountReveal.current, h.intent);
+  h.context.sessionPending.current = false; h.run(); h.flush(); assert.equal(h.calls.length, 2);
+});
+test('account modal close is required before scheduling reveal', () => {
+  const h = revealHarness(); h.intent.ready = false; h.run(); h.flush(); assert.deepEqual(h.calls, []);
+  h.intent.ready = true; h.run(); h.flush(); assert.equal(h.calls.length, 2);
+});
+test('repeated scheduling replaces the older frame instead of focusing twice', () => {
+  const h = revealHarness(); h.run(); h.run(); assert.equal(h.frames.size, 1); h.flush(); assert.equal(h.calls.length, 2);
+});
+
+for (const mounted of [true, false]) test(`accepted save tracks whether account modal is still mounted: ${mounted}`, async () => {
+  const h = harness({ afterAccepted: (_view, context) => { context.accountDialog.current = mounted ? { isConnected: true } : null; } });
+  await h.run(); expectOneCreated(h, 'none');
+  assert.equal(h.context.accountReveal.current.ready, !mounted);
+  assert.equal(h.context.accountReveal.current.epoch, h.context.identityEpoch.current);
+  assert.equal(h.context.accountReveal.current.namespace, h.context.namespaceRef.current);
+});
+
+test('a delayed Sheet portal target mount retains the current record intent', () => {
+  const h = revealHarness(); h.context.accountRows.current.clear(); h.run();
+  assert.equal(h.context.accountReveal.current, h.intent); assert.equal(h.frames.size, 0);
+  h.context.accountRows.current.set('created', h.target); h.run(); h.flush(); assert.equal(h.calls.length, 2);
+});
