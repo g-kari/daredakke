@@ -44,7 +44,7 @@ function harness(namespace = null) {
     fetch: (url, options) => { const pending = deferred(); requests.push({ url, options, ...pending }); return pending.promise; },
     toast: { success: () => {}, error: () => { view.toasts = (view.toasts ?? 0) + 1; } },
   };
-  for (const name of ['ImportConfirmationInterrupted', 'ImportReview', 'ImportSource', 'ImportFilePending', 'EmptyImportConfirmed', 'State', 'Namespace', 'Revision', 'Selected', 'PersonDraft', 'AccountDraft', 'Confirmation', 'Discard', 'ImportText', 'ImportOpen', 'ExportOpen', 'Copied', 'Query', 'ServiceFilter', 'MergeTarget', 'MergeError', 'MergeErrorPair', 'FormError', 'Error', 'CheckingSession', 'ReadFailure', 'Busy']) {
+  for (const name of ['ImportConfirmationInterrupted', 'ImportReview', 'ImportSource', 'ImportFilePending', 'EmptyImportConfirmed', 'State', 'Namespace', 'Revision', 'Selected', 'PersonDraft', 'AccountDraft', 'Confirmation', 'Discard', 'ImportText', 'ImportOpen', 'ExportOpen', 'Copied', 'Query', 'ServiceFilter', 'MergeTarget', 'MergeError', 'MergeErrorPair', 'FormError', 'FormStatus', 'Error', 'CheckingSession', 'ReadFailure', 'Busy']) {
     const key = name[0].toLowerCase() + name.slice(1);
     context['set' + name] = value => { view[key] = value; };
   }

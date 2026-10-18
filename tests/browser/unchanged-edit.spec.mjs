@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+const noChangeText = '変更はありません。記録と復元履歴はそのままです。編集を続けるか、キャンセルで閉じてください。';
 const namespace = 'u_' + 'a'.repeat(64);
 const fixture = () => ({ people: [{ id: 'synthetic-person', name: 'Synthetic person', aliases: ['Alias one', 'Alias two'], tags: ['one', 'two'], notes: 'Original recovery note', color: '#4f5fcb' }], accounts: [{ id: 'synthetic-account', service: 'Discord', label: 'Synthetic account', url: 'https://discord.com/users/100000000000000001', key: 'Discord:100000000000000001', personId: null }] });
 async function start(page) {
@@ -35,15 +36,23 @@ for (const kind of ['person', 'account']) test(`ten unchanged ${kind} saves pres
   const api = await start(page), initial = structuredClone(api.state);
   if (kind === 'person') await openPerson(page, info);
   else await page.getByRole('tab', { name: /^未整理/ }).click();
+  if (kind === 'person') await personProfile(page, info).getByRole('button', { name: '編集', exact: true }).click();
+  else await page.getByRole('button', { name: 'Synthetic accountを編集', exact: true }).click();
   for (let repeat = 0; repeat < 10; repeat++) {
-    if (kind === 'person') await personProfile(page, info).getByRole('button', { name: '編集', exact: true }).click();
-    else await page.getByRole('button', { name: 'Synthetic accountを編集', exact: true }).click();
-    await editor(page).getByRole('button', { name: '保存する', exact: true }).click();
-    await expect(editor(page)).toHaveCount(0);
-    await expect(page.getByText('変更はありません。記録と復元履歴はそのままです。', { exact: true }).last()).toBeVisible();
+    await editor(page).getByRole('button', { name: '保存する', exact: true }).focus();
+    await page.keyboard.press('Enter');
+    await expect(editor(page)).toBeVisible();
+    await expect(editor(page).getByRole('status')).toHaveText(noChangeText);
+    await expect(editor(page).getByRole('status')).toBeInViewport({ ratio: 1 });
     expect(api.posts).toHaveLength(0); expect(api.state).toEqual(initial);
     if (repeat === 0) await info.attach(`unchanged-${kind}`, { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
   }
+  const field = kind === 'person' ? editor(page).getByRole('textbox', { name: 'メモ', exact: true }) : editor(page).getByLabel('表示名', { exact: true });
+  const original = await field.inputValue();
+  await field.fill(original + ' temporary'); await expect(editor(page).getByRole('status')).toHaveText('');
+  await field.fill(original);
+  await editor(page).getByRole('button', { name: 'キャンセル', exact: true }).click();
+  await expect(editor(page)).toHaveCount(0);
   if (kind === 'person' && info.project.use.isMobile) {
     await personProfile(page, info).getByRole('button', { name: 'Close', exact: true }).click();
     await expect(personProfile(page, info)).toHaveCount(0);
@@ -61,9 +70,9 @@ test('canonical unchanged fields do not save; a real edit fails safely then expl
   await profile.getByRole('button', { name: '編集', exact: true }).click();
   await editor(page).getByLabel('名前 必須', { exact: true }).fill('  Synthetic person  ');
   await editor(page).getByRole('button', { name: '保存する', exact: true }).click();
-  await expect(editor(page)).toHaveCount(0); expect(api.posts).toHaveLength(0); expect(api.state).toEqual(initial);
-  await profile.getByRole('button', { name: '編集', exact: true }).click();
+  await expect(editor(page).getByRole('status')).toHaveText(noChangeText); expect(api.posts).toHaveLength(0); expect(api.state).toEqual(initial);
   await editor(page).getByRole('textbox', { name: 'メモ', exact: true }).fill('A real new synthetic note');
+  await expect(editor(page).getByRole('status')).toHaveText('');
   api.fail = true;
   await editor(page).getByRole('button', { name: '保存する', exact: true }).click();
   await expect(editor(page).getByRole('alert')).toHaveText('Synthetic save failed');

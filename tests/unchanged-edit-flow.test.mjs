@@ -77,7 +77,7 @@ function harness(kind) {
     return Response.json({ revision: context.revision + 1 });
   };
   for (const [setter, key] of [
-    ['Busy', 'busy'], ['Error', 'error'], ['FormError', 'formError'],
+    ['Busy', 'busy'], ['Error', 'error'], ['FormError', 'formError'], ['FormStatus', 'formStatus'],
     ['PersonDraft', 'personDraft'], ['AccountDraft', 'accountDraft'],
     ['Revision', 'revision'], ['Selected', 'selected'], ['Discard', 'discard'],
     ['Query', 'query'], ['ServiceFilter', 'serviceFilter'], ['Tab', 'tab'],
@@ -99,12 +99,12 @@ for (const kind of ['person', 'account']) {
       c.editPerson(c.data.people[0]);
       assert.equal(drafts.personDraftChanged(c.personDraft, c.personDraftInitial.current), false);
       await c.submitPerson({ preventDefault() {} });
-      assert.equal(c.personDraft, null, 'Successful unchanged save dismisses the person form.');
+      assert.ok(c.personDraft, 'Unchanged person edit remains open with an inline status.');
     } else {
       c.editAccount(c.data.accounts[0]);
       assert.equal(drafts.accountDraftChanged(c.accountDraft, c.accountDraftInitial.current), false);
       await c.submitAccount({ preventDefault() {} });
-      assert.equal(c.accountDraft, null, 'Successful unchanged save dismisses the account form.');
+      assert.ok(c.accountDraft, 'Unchanged account edit remains open with an inline status.');
     }
     assert.deepEqual(c.state.data, h.afterMeaningfulEdit, 'No real data changed.');
     assert.equal(c.query, expectedQuery, 'Search text remains exact.');
@@ -133,7 +133,7 @@ for (const kind of ['person', 'account']) {
     assert.deepEqual(undone.data, h.beforeMeaningfulEdit, 'Meaningful restoration must remain usable.');
   }
   assert.equal(h.notices.some(item => item.kind === 'info' && /絞り込み/.test(item.text)), false, 'No filter-reset notice may be emitted.');
-  if (options.expectation === 'fixed') { assert.equal(h.notices.filter(item => item.kind === 'info' && item.text === '変更はありません。記録と復元履歴はそのままです。').length, 10); assert.equal(h.notices.some(item => item.kind === 'success'), false); }
+  if (options.expectation === 'fixed') { assert.equal(c.formStatus, '変更はありません。記録と復元履歴はそのままです。編集を続けるか、キャンセルで閉じてください。'); assert.equal(h.notices.some(item => item.kind === 'success'), false); assert.equal(h.notices.some(item => item.kind === 'info'), false); }
   assert.equal(h.notices.some(item => item.kind === 'error'), false, 'There must be no hidden submit failure.');
   outcomes.push({
     kind,
