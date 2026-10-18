@@ -342,10 +342,32 @@ export default function FriendRecord() {
   }
   async function submitAccount(e: FormEvent) {
     e.preventDefault(); if (!accountDraft) return;
+    const submitEpoch = identityEpoch.current, submitNamespace = namespaceRef.current;
     try {
       const normalized = normalizeAccount(accountDraft.service, accountDraft.url);
       const next: Account = { id: accountDraft.id || crypto.randomUUID(), service: accountDraft.service, label: accountDraft.label.trim() || normalized.key.split(':')[1], personId: accountDraft.personId === 'none' ? null : accountDraft.personId, ...normalized };
-      if (await update({ ...data, accounts: accountDraft.id ? data.accounts.map(a => a.id === accountDraft.id ? next : a) : [...data.accounts, next] }, accountDraft.id ? 'アカウントを更新しました' : 'アカウントを追加しました')) { clearDraftFocus('account'); accountDraftInitial.current = null; setAccountDraft(null); }
+      const isNew = !accountDraft.id;
+      const nextData = { ...data, accounts: isNew ? [...data.accounts, next] : data.accounts.map(a => a.id === accountDraft.id ? next : a) };
+      if (await update(nextData, isNew ? 'アカウントを追加しました' : 'アカウントを更新しました')) {
+        // Identity can change after save accepts its response, before these
+        // nested async continuations resume. Never revive old reveal intent.
+        if (isNew && (submitEpoch !== identityEpoch.current || submitNamespace !== namespaceRef.current)) return;
+        clearDraftFocus('account'); accountDraftInitial.current = null; setAccountDraft(null);
+        if (isNew) {
+          const filters = filtersRef.current, clearedFilters: string[] = [];
+          const matchesQuery = next.personId
+            ? searchPeople(nextData, createRecordSearch(filters.query)).some(p => p.id === next.personId)
+            : createRecordSearch(filters.query).matches([next.label, next.url, next.service]);
+          const matchesService = filters.serviceFilter === 'all' || (next.personId
+            ? nextData.accounts.some(a => a.personId === next.personId && a.service === filters.serviceFilter)
+            : next.service === filters.serviceFilter);
+          if (!matchesQuery) { setQuery(''); clearedFilters.push('検索'); }
+          if (!matchesService) { setServiceFilter('all'); clearedFilters.push('サービス'); }
+          setSelected(next.personId); setTab(next.personId ? 'people' : 'unresolved');
+          if (next.personId) profileFocus.current = { target: null, epoch: identityEpoch.current, personId: next.personId };
+          if (clearedFilters.length) toast.info(`追加したアカウントを表示するため、${clearedFilters.join('と')}の絞り込みを解除しました`);
+        }
+      }
     } catch (e) { setFormError((e as Error).message); }
   }
   async function link(a: Account, target: string) { await update({ ...data, accounts: data.accounts.map(c => c.id === a.id ? { ...c, personId: target === 'none' ? null : target } : c) }, target === 'none' ? '紐づけを解除しました' : 'アカウントを紐づけました'); }

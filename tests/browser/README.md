@@ -1,5 +1,7 @@
 # 画面と入力破棄のブラウザー回帰テスト
 
+新規アカウントの保存後表示はnew-account-visibility.spec.mjsで確認します。未整理一覧/正確な紐づけ先のプロフィールへ移ること、一致する検索・サービスの保持、隠す条件の解除、保存中/503/明示キャンセル/既存編集の表示条件保持、連続追加のPOST/ID/履歴が重複しないことを対象にします。8シナリオをdesktop/mobile両方へ適用し、loopbackと合成APIだけを許可します。このファイルの存在や収集成功は実ブラウザー合格の証明ではありません。対象SHAの実行結果を確認してください。
+
 pnpm install --frozen-lockfile 後、pnpm exec playwright install chromium と pnpm run test:browser で実行します。
 
 通常のvite buildで生成した実画面をlocalhostのpreviewで開き、Playwright側で /api/session と /api/records を架空データに置き換えます。本番の認証・API・D1は使わず、localhost以外への通信を遮断します。実装にデモ用の認証回避やテスト入口を追加しません。
