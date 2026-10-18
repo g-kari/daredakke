@@ -34,7 +34,7 @@ function harness(namespace = null) {
   const context = {
     scope: 'demo', namespace, busy: false, revision: 0,
     identityEpoch: { current: 0 }, importReadEpoch: { current: 0 }, importConfirmationFocus: { current: null }, importSessionFocus: { current: null },
-    personDraftInitial: { current: null }, accountDraftInitial: { current: null }, draftFocus: { current: null }, discardFocus: { current: null },
+    personDraftInitial: { current: null }, accountDraftInitial: { current: null }, accountReveal: { current: null }, draftFocus: { current: null }, discardFocus: { current: null },
     namespaceRef: { current: namespace }, stateRef: { current: null },
     sessionPending: { current: false }, recordLoad: { current: null }, readRecovery: { current: null }, sessionRetry: { current: () => {} },
     inputFile: { current: { value: '' } },
