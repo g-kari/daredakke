@@ -34,7 +34,7 @@ const editor = page => page.getByRole('dialog', { name: /人の記録を編集|�
 for (const kind of ['person', 'account']) test(`ten unchanged ${kind} saves preserve meaningful undo without POST`, async ({ page }, info) => {
   const api = await start(page), initial = structuredClone(api.state);
   if (kind === 'person') await openPerson(page, info);
-  else await page.getByRole('tab', { name: '未整理', exact: true }).click();
+  else await page.getByRole('tab', { name: /^未整理/ }).click();
   for (let repeat = 0; repeat < 10; repeat++) {
     if (kind === 'person') await personProfile(page, info).getByRole('button', { name: '編集', exact: true }).click();
     else await page.getByRole('button', { name: 'Synthetic accountを編集', exact: true }).click();
