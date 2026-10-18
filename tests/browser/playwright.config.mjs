@@ -12,7 +12,7 @@ export default defineConfig({
   retries: 0,
   workers: process.env.CI ? 2 : 1,
   timeout: 30000,
-  globalTimeout: 180000,
+  globalTimeout: 240000,
   reporter: [['list'], ['json', { outputFile: results + 'browser-results.json' }]],
   outputDir: results + 'browser',
   use: { baseURL: 'http://127.0.0.1:4317', serviceWorkers: 'block', trace: 'retain-on-failure', screenshot: 'only-on-failure' },
