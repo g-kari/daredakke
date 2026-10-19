@@ -58,7 +58,7 @@ function harness(kind) {
     personDraftInitial: { current: null }, accountDraftInitial: { current: null },
     draftFocus: { current: null }, discardFocus: { current: null }, discard: null,
     filtersRef: { current: { query: expectedQuery, serviceFilter: expectedServiceFilter } },
-    profileFocus: { current: null },
+    profileFocus: { current: null }, accountReveal: { current: null }, accountDialog: { current: null },
     query: expectedQuery, serviceFilter: expectedServiceFilter, tab: expectedTab,
     blankPerson: () => ({ name: '', aliases: '', tags: '', notes: '' }),
     split: value => value.split(/[,、\n]/).map(item => item.trim()).filter(Boolean),
