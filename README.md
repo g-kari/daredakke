@@ -107,4 +107,4 @@ D1のdatabase_idはローカル用の置換必須値です。承認後に対象�
 
 ### 人詳細のアニメーション（未配備）
 
-モバイルの人詳細Sheetは @animate-ui/react 2.0.0 のRadix Dialog primitiveとMotion 14.4.0で一覧からの移動を示します。既存のキーボード操作・フォーカス復帰・保存方式は変えません。OSの動きを減らす設定では横方向の移動を抑えます。desktopの詳細は従来のままです。Animate UIは単純なMITではなく[MIT + Commons Clause](docs/ANIMATE-UI-LICENSE.md)です。アプリへの利用は可能ですが、コンポーネント自体の販売・元の形での再配布は制限されています。
+モバイルの人詳細Sheetは @animate-ui/react 2.0.0 のRadix Dialog primitiveとMotion 14.4.0で一覧からの移動を示します。既存のキーボード操作・フォーカス復帰・保存方式は変えません。OSの動きを減らす設定では横方向の移動を抑えます。desktopの詳細は従来のままで、追加のアニメーション用コードは読み込みません。モバイルで追加コードを読み込み中、または取得に失敗した場合も従来のRadixで詳細を開けます。開いている途中で実装を入れ替えず、閉じた後に次回から有効にします。[Motionのライセンス通知](docs/MOTION-NOTICES.md)も同梱します。Animate UIは単純なMITではなく[MIT + Commons Clause](docs/ANIMATE-UI-LICENSE.md)です。アプリへの利用は可能ですが、コンポーネント自体の販売・元の形での再配布は制限されています。
