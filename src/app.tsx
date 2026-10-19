@@ -455,7 +455,19 @@ export default function FriendRecord() {
   }
   function downloadExport() {
     if (sessionPending.current || !namespace || namespace !== namespaceRef.current) return;
-    const blob = new Blob([exportData(data)], { type: 'application/json' }), url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = `daredakke-${scope}-${new Date().toISOString().slice(0, 10)}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); toast.success('JSONを書き出しました');
+    let url: string | undefined;
+    try {
+      const blob = new Blob([exportData(data)], { type: 'application/json' });
+      url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = `daredakke-${scope}-${new Date().toISOString().slice(0, 10)}.json`; a.click();
+      toast.success('JSONのファイル保存を開始しました。保存先を確認してください');
+    } catch {
+      // Keep the visible JSON and copy fallback available. Browser exceptions
+      // may contain private details and must not be surfaced in notifications.
+      toast.error('ファイル保存を開始できませんでした。もう一度試すか、JSONをコピーして安全に保管してください');
+    } finally {
+      if (url !== undefined) { const allocated = url; setTimeout(() => URL.revokeObjectURL(allocated), 1000); }
+    }
   }
   async function copyExport() {
     if (sessionPending.current || !namespace || namespace !== namespaceRef.current) return;
