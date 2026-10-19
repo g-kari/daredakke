@@ -30,7 +30,7 @@ function harness(incoming = demoData()) {
     requestAnimationFrame: fn => fn(),
     update: async (data, label) => { writes.push({ data, label }); return context.saveResult ?? true; },
   };
-  for (const name of ['ImportConfirmationInterrupted', 'Discard', 'ImportText', 'ImportReview', 'ImportSource', 'ImportFilePending', 'EmptyImportConfirmed', 'FormError', 'ImportOpen', 'Confirmation', 'Selected']) {
+  for (const name of ['ImportConfirmationInterrupted', 'Discard', 'ImportText', 'ImportReview', 'ImportSource', 'ImportFilePending', 'EmptyImportConfirmed', 'FormError', 'FormStatus', 'ImportOpen', 'Confirmation', 'Selected']) {
     const key = name[0].toLowerCase() + name.slice(1); context['set' + name] = value => { context[key] = value; view[key] = value; if (name === 'Confirmation') context.confirmationRef.current = value; };
   }
   return { context, view, writes, toasts, original, call: (name, ...args) => callback(name, context)(...args) };
