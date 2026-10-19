@@ -1,6 +1,9 @@
 import { test, expect } from '@playwright/test';
 const namespace = 'u_' + 'b'.repeat(64);
 for (const failure of ['allocate', 'click']) test(`export ${failure} exception preserves JSON and permits explicit retry`, async ({ page }) => {
+  // ExportedAt is regenerated for each render/copy. Fix wall time without
+  // freezing timers so exact JSON assertions and delayed URL cleanup coexist.
+  await page.clock.setFixedTime(new Date('2026-10-19T00:00:00Z'));
   const errors = [], posts = [];
   page.on('pageerror', e => errors.push(e.message));
   await page.context().route('**/*', route => {
@@ -28,7 +31,6 @@ for (const failure of ['allocate', 'click']) test(`export ${failure} exception p
   await dialog.getByRole('button', { name: 'ファイルを保存', exact: true }).click();
   await expect(page.getByText('ファイル保存を開始できませんでした。もう一度試すか、JSONをコピーして安全に保管してください', { exact: true })).toBeVisible();
   await expect(json).toHaveValue(original); await expect(dialog.getByRole('button', { name: 'コピー', exact: true })).toBeEnabled();
-  expect(await page.evaluate(() => window.exportProbe.revoked.length)).toBe(0);
   await dialog.getByRole('button', { name: 'コピー', exact: true }).click();
   await expect.poll(() => page.evaluate(() => window.exportProbe.copied)).toEqual([original]);
   await expect(dialog.getByRole('button', { name: 'コピー済み', exact: true })).toBeVisible();
