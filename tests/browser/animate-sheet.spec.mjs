@@ -12,9 +12,12 @@ async function start(page, mobile = false) {
     if (url.pathname.startsWith('/api/')) { violations.push(url.pathname); return route.abort(); }
     return route.fallback();
   });
-  await page.goto('/');
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page.getByText('保存済み', { exact: true })).toBeVisible();
-  if (animationReady) await animationReady;
+  if (animationReady) {
+    const response = await animationReady; await response.finished();
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  }
   return violations;
 }
 
@@ -33,6 +36,7 @@ for (const reducedMotion of ['no-preference', 'reduce']) test(`person detail pre
       await page.keyboard.press('Escape'); await expect(sheet).toHaveCount(0); await opener.click();
     }
     await expect(sheet).toHaveAttribute('data-animation-source', 'animate-ui');
+    if (reducedMotion === 'reduce') expect(await sheet.evaluate(el => Math.abs(new DOMMatrix(getComputedStyle(el).transform).m41))).toBeLessThan(1);
     await expect(sheet.getByText('Synthetic motion fixture only', { exact: true })).toBeVisible();
     await expect.poll(() => sheet.evaluate(el => Math.abs(new DOMMatrix(getComputedStyle(el).transform).m41))).toBeLessThan(1);
     await expect(sheet.getByRole('button', { name: 'Close', exact: true })).toBeInViewport({ ratio: 1 });
@@ -64,7 +68,7 @@ test('optional animation load never replaces an open fallback session', async ({
   await sheet.evaluate(el => { window.__nativeSheet = el; });
   const close = sheet.getByRole('button', { name: 'Close', exact: true }); await close.focus();
   const response = page.waitForResponse(r => /\/assets\/dialog-[^/]+\.js$/.test(new URL(r.url()).pathname));
-  release(); await response; await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  release(); const chunkResponse = await response; await chunkResponse.finished(); await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   await expect(sheet).toHaveAttribute('data-animation-source', 'native'); await expect(close).toBeFocused();
   expect(await sheet.evaluate(el => el === window.__nativeSheet)).toBe(true);
   await page.keyboard.press('Escape'); await expect(sheet).toHaveCount(0); await expect(opener).toBeFocused();
@@ -75,8 +79,11 @@ test('optional animation load never replaces an open fallback session', async ({
 
 test('optional animation chunk failure leaves keyboard detail usable', async ({ page }, info) => {
   test.skip(!info.project.use.isMobile, 'Sheet is mobile-only');
-  await page.route('**/assets/dialog-*.js', route => route.abort());
+  let failed; const chunkFailed = new Promise(resolve => { failed = resolve; });
+  await page.route('**/assets/dialog-*.js', async route => { await route.abort(); failed(); });
   const violations = await start(page);
+  await chunkFailed;
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const opener = page.getByRole('button', { name: 'Synthetic personの記録を開く', exact: true });
   await opener.focus(); await page.keyboard.press('Enter');
   const sheet = page.getByRole('dialog', { name: 'Synthetic person', exact: true });
