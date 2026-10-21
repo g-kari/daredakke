@@ -239,3 +239,6 @@ a { color:#cab4ec; } svg { flex-shrink:0; }
 }
 @media (max-width:370px) { .backup-tools { display:grid; grid-template-columns:1fr 1fr; } .backup-tools>[data-slot=button]:last-child { justify-self:start; } .tab-list { gap:16px; } }
 @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation-duration:.01ms!important; transition-duration:.01ms!important; } }
+
+/* Keep export actions and copy recovery feedback in the dialog viewport. */
+.export-json { max-height:40dvh; min-height:120px; overflow:auto; }

@@ -72,6 +72,13 @@ export default function FriendRecord() {
   const [importConfirmationInterrupted, setImportConfirmationInterrupted] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [exportCopyError, setExportCopyError] = useState('');
+  const exportDialogOpen = useRef(false);
+  const exportCopyEpoch = useRef(0);
+  function setExportDialog(open: boolean) {
+    exportCopyEpoch.current++; exportDialogOpen.current = open;
+    setCopied(false); setExportCopyError(''); setExportOpen(open);
+  }
   const [reloadKey, setReloadKey] = useState(0);
   const personDraftInitial = useRef<PersonDraft | null>(null);
   const accountDraftInitial = useRef<AccountDraft | null>(null);
@@ -470,11 +477,12 @@ export default function FriendRecord() {
     }
   }
   async function copyExport() {
-    if (sessionPending.current || !namespace || namespace !== namespaceRef.current) return;
-    const expected = namespace, epoch = identityEpoch.current;
-    const isCurrent = () => expected === namespaceRef.current && epoch === identityEpoch.current;
+    if (sessionPending.current || !namespace || namespace !== namespaceRef.current || !exportDialogOpen.current) return;
+    const expected = namespace, epoch = identityEpoch.current, copyEpoch = ++exportCopyEpoch.current;
+    setCopied(false); setExportCopyError('');
+    const isCurrent = () => exportDialogOpen.current && copyEpoch === exportCopyEpoch.current && !sessionPending.current && expected === namespaceRef.current && epoch === identityEpoch.current;
     try { await navigator.clipboard.writeText(exportData(data)); if (isCurrent()) { setCopied(true); toast.success('JSONをコピーしました'); } }
-    catch { if (isCurrent()) toast.error('コピーできませんでした。テキストを選択してコピーしてください。'); }
+    catch { if (isCurrent()) setExportCopyError('コピーできませんでした。テキストを選択してコピーしてください。'); }
   }
   function accountRow(a: Account, controls = true, compact = false) {
     const tools = <div className="account-controls"><Choice label={a.label + 'の紐づけ先'} value={a.personId || 'none'} onChange={v => void link(a, v)} items={peopleChoices} disabled={busy} />{!compact && <Button variant="ghost" size="icon" aria-label={a.label + 'を編集'} onClick={() => editAccount(a)} disabled={busy}><Pencil aria-hidden="true" /></Button>}<Button variant="ghost" size="icon" aria-label={a.label + 'の登録を削除'} onClick={() => removeAccount(a)} disabled={busy}><Trash2 aria-hidden="true" /></Button></div>;
@@ -530,7 +538,7 @@ export default function FriendRecord() {
           </div>
         </div>
       </Tabs>
-      <footer className="workspace-footer"><div className="backup-tools"><Button variant="ghost" onClick={() => { setCopied(false); setExportOpen(true); }} disabled={!state || busy}><Download aria-hidden="true" />JSONを書き出す</Button><Button variant="ghost" onClick={() => { setFormError(''); setImportOpen(true); }} disabled={!state || busy}><Upload aria-hidden="true" />JSONを読み込む</Button><Button variant="ghost" onClick={() => { if (state) void save(undoChange(state), '直前の操作を元に戻しました'); }} disabled={busy || !state?.undo.length} title={state?.undo[0]?.label}><Undo2 aria-hidden="true" />元に戻す</Button></div><span>アカウントは手入力 / サービス未接続</span></footer>
+      <footer className="workspace-footer"><div className="backup-tools"><Button variant="ghost" onClick={() => setExportDialog(true)} disabled={!state || busy}><Download aria-hidden="true" />JSONを書き出す</Button><Button variant="ghost" onClick={() => { setFormError(''); setImportOpen(true); }} disabled={!state || busy}><Upload aria-hidden="true" />JSONを読み込む</Button><Button variant="ghost" onClick={() => { if (state) void save(undoChange(state), '直前の操作を元に戻しました'); }} disabled={busy || !state?.undo.length} title={state?.undo[0]?.label}><Undo2 aria-hidden="true" />元に戻す</Button></div><span>アカウントは手入力 / サービス未接続</span></footer>
       <input className="sr-only" ref={inputFile} type="file" accept="application/json,.json" onChange={e => void readFile(e.target.files?.[0])} aria-label="JSONファイルを選択" />
     </main>
     {compactProfile && <Sheet open={!!person} onOpenChange={open => { if (!open) setSelected(null); }}><SheetContent className="person-sheet" onCloseAutoFocus={event => { const focus = profileFocus.current; if (focus && focus.epoch === identityEpoch.current && !sessionPending.current && focus.target?.isConnected) { event.preventDefault(); focus.target.focus(); } }}><SheetHeader><SheetTitle>{person?.name || '人の記録'}</SheetTitle><SheetDescription>別名・メモ・アカウントをこの人にまとめる</SheetDescription></SheetHeader>{person && <div className="sheet-body">{profileContent(person)}</div>}</SheetContent></Sheet>}
@@ -556,8 +564,9 @@ export default function FriendRecord() {
         <div className="form-actions import-actions"><Button variant="outline" disabled={busy} onClick={editImportPreview}>JSONの編集に戻る</Button><Button ref={importConfirmButton} onClick={confirmImport} disabled={busy || importFilePending || (importReview.review.empty && !emptyImportConfirmed)}>置き換えを確認する</Button></div>
       </section>}
     </DialogContent></Dialog>
-    <Dialog open={exportOpen} onOpenChange={setExportOpen}><DialogContent className="record-dialog"><DialogHeader><DialogTitle>JSONを書き出す</DialogTitle><DialogDescription>{scope === 'demo' ? 'デモ' : 'マイレコード'}の{data.people.length}人・{data.accounts.length}アカウントを保存します。</DialogDescription></DialogHeader><Textarea disabled={busy} readOnly rows={8} value={exportData(data)} aria-label="書き出しJSON" spellCheck={false} /><p className="small-note">名前・メモ・URLが含まれます。ファイルは自分で安全に保管してください。操作履歴は書き出しません。</p><div className="settings-actions"><Button onClick={downloadExport}><Download />ファイルを保存</Button><Button variant="outline" onClick={() => void copyExport()}>{copied ? <Check /> : <Copy />}{copied ? 'コピー済み' : 'コピー'}</Button></div></DialogContent></Dialog>
+    <Dialog open={exportOpen} onOpenChange={setExportDialog}><DialogContent className="record-dialog"><DialogHeader><DialogTitle>JSONを書き出す</DialogTitle><DialogDescription>{scope === 'demo' ? 'デモ' : 'マイレコード'}の{data.people.length}人・{data.accounts.length}アカウントを保存します。</DialogDescription></DialogHeader><Textarea className="export-json" disabled={busy} readOnly rows={8} value={exportData(data)} aria-label="書き出しJSON" spellCheck={false} /><p className="small-note">名前・メモ・URLが含まれます。ファイルは自分で安全に保管してください。操作履歴は書き出しません。</p>{exportCopyError && <p role="alert" className="form-error">{exportCopyError}</p>}<div className="settings-actions"><Button onClick={downloadExport}><Download />ファイルを保存</Button><Button variant="outline" onClick={() => void copyExport()}>{copied ? <Check /> : <Copy />}{copied ? 'コピー済み' : 'コピー'}</Button></div></DialogContent></Dialog>
     <AlertDialog open={!!discard} onOpenChange={open => { if (!open) setDiscard(null); }}><AlertDialogContent onCloseAutoFocus={restoreDiscardFocus} onKeyDownCapture={keepEditingOnEscape}><AlertDialogTitle>保存していない入力を破棄しますか？</AlertDialogTitle><AlertDialogDescription>入力した変更はまだ保存されていません。編集を続けると、入力はそのまま残ります。</AlertDialogDescription><AlertDialogFooter><AlertDialogCancel>編集を続ける</AlertDialogCancel><AlertDialogAction onClick={discardChanges}>入力を破棄する</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
     <AlertDialog open={!!confirmation} onOpenChange={open => { if (!open) setConfirmation(null); }}><AlertDialogContent className={confirmation?.kind === 'import' ? 'import-confirmation' : undefined} onCloseAutoFocus={restoreImportConfirmationFocus}><AlertDialogTitle>{confirmation?.title}</AlertDialogTitle><AlertDialogDescription>{confirmation?.message}</AlertDialogDescription><AlertDialogFooter><AlertDialogCancel>キャンセル</AlertDialogCancel><AlertDialogAction onClick={() => { const c = confirmation; setConfirmation(null); if (c) void c.run(); }} disabled={busy}>{confirmation?.action}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
   </div>;
 }
+

@@ -36,4 +36,6 @@ JSON置き換えの最終確認や人の入力破棄確認が開いている時�
 
 未変更編集の回帰: `unchanged-edit.spec.mjs` は人/アカウントの未変更保存10回でPOSTと履歴が増えず意味あるundoを実行できること、正規化同値・実変更の失敗/明示再試行/undoを390/1280の実UIで確認します。レスポンスと記録は合成fixtureのみです。
 
+JSON書き出しのexport-copy.spec.mjsは、合成clipboard promiseで閉じる→再度開く→旧成功、通常成功、失敗した再試行、古い成功の遅着を実ビルドのdesktop/mobileで検証します。4ケースの収集やローカル起動不能は実画面合格と扱わず、対象headの通常CIで実行結果を確認します。
+
 JSONファイル保存の例外回帰はexport-download.spec.mjsで、object URL作成とdownload clickの同期例外から、表示JSONの保持、コピー代替手段の実行、明示的な再試行、1秒後のURL解放をdesktop/mobileで確認します。無通知のダウンロードブロックと利用者キャンセルは検出しません。実行結果は最終SHAの通常CIを確認してください。
