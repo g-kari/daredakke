@@ -23,6 +23,26 @@ async function start(page) {
   page.on('pageerror', error => api.errors.push(error.message));
   page.on('download', download => api.downloads.push(download.suggestedFilename()));
   await page.addInitScript(() => {
+    // Observe native dispatch targets only; never alter propagation, clocks, or activation.
+    const pointers = window.__saveResponsePointerEvents = { limit: 128, dropped: 0, events: [] };
+    const describe = node => node instanceof Element ? {
+      tag: node.tagName.toLowerCase(),
+      id: node.id.slice(0, 80),
+      role: (node.getAttribute('role') || '').slice(0, 32),
+      state: (node.getAttribute('data-state') || '').slice(0, 16),
+      pointerEvents: getComputedStyle(node).pointerEvents.slice(0, 16),
+    } : null;
+    const recordPointer = event => {
+      pointers.events.push({
+        sequence: pointers.dropped + pointers.events.length + 1,
+        type: event.type, trusted: event.isTrusted, timeStamp: event.timeStamp,
+        x: event.clientX, y: event.clientY, button: event.button,
+        target: describe(event.target),
+        path: event.composedPath().filter(node => node instanceof Element).slice(0, 12).map(describe),
+      });
+      if (pointers.events.length > pointers.limit) { pointers.events.shift(); pointers.dropped++; }
+    };
+    for (const type of ['pointerdown', 'click']) window.addEventListener(type, recordPointer, { capture: true, passive: true });
     const effects = window.__saveResponseEffects = { clipboard: [], blobs: [], storage: [] };
     window.__daredakkeTools = new Map();
     Object.defineProperty(document, 'modelContext', { configurable: true, value: {
@@ -78,17 +98,22 @@ async function start(page) {
   return api;
 }
 
-test.afterEach(async ({ page }) => {
+test.afterEach(async ({ page }, info) => {
   const api = fixtures.get(page);
   if (!api) return;
-  expect(api.errors, 'The actual built UI must not throw').toEqual([]);
-  expect(api.violations, 'Only exact-loopback static GETs and the synthetic API are allowed').toEqual([]);
-  expect(api.downloads, 'Recovery must not download private records').toEqual([]);
-  expect(await page.evaluate(() => window.__saveResponseEffects), 'Drafts stay in memory; no clipboard, export, or Storage writes').toEqual({ clipboard: [], blobs: [], storage: [] });
-  for (const post of api.posts) {
-    expect(post.scope).toBe('demo');
-    expect(post.expectedNamespace).toBe(namespaceA);
-    expect(post.revision, 'Unacknowledged writes never advance the client revision').toBe(initialRevision);
+  try {
+    expect(api.errors, 'The actual built UI must not throw').toEqual([]);
+    expect(api.violations, 'Only exact-loopback static GETs and the synthetic API are allowed').toEqual([]);
+    expect(api.downloads, 'Recovery must not download private records').toEqual([]);
+    expect(await page.evaluate(() => window.__saveResponseEffects), 'Drafts stay in memory; no clipboard, export, or Storage writes').toEqual({ clipboard: [], blobs: [], storage: [] });
+    for (const post of api.posts) {
+      expect(post.scope).toBe('demo');
+      expect(post.expectedNamespace).toBe(namespaceA);
+      expect(post.revision, 'Unacknowledged writes never advance the client revision').toBe(initialRevision);
+    }
+  } finally {
+    const pointers = await page.evaluate(() => window.__saveResponsePointerEvents ?? null).catch(() => null);
+    await info.attach('synthetic-save-pointer-events', { body: JSON.stringify({ pointers }), contentType: 'application/json' });
   }
 });
 
