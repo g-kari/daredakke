@@ -6,3 +6,11 @@ allowBuilds:
   esbuild: true
   fsevents: true
   workerd: true
+
+# Owner-approved exception for this reviewed integration only (2026-10-19).
+# Exact versions: future versions remain subject to the default 24h policy.
+minimumReleaseAgeExclude:
+  - '@animate-ui/react@2.0.0'
+  - 'motion@14.4.0'
+  - 'framer-motion@14.4.0'
+  - 'motion-dom@14.4.0'
