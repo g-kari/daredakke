@@ -309,10 +309,13 @@ test('a timed-out session interrupts final JSON replacement confirmation and ret
   await expect(expected.field).toHaveValue(expected.value);
   // Merely verifying the owner cannot revive the old final confirmation. The
   // user must explicitly review and open a fresh confirmation before any POST.
-  await confirm().click({ force: true });
+  // Deadline assertions are complete. Let modal animation/actionability advance
+  // before exercising these explicit user actions; do not force a covered target.
+  await page.clock.resume();
+  await confirm().click();
   await expect(alert.getByRole('button', { name: '置き換えて読み込む', exact: true })).toBeEnabled();
   expect(await page.evaluate(() => window.__readRecovery.violations.filter(operation => operation.startsWith('POST ')))).toEqual([]);
-  await alert.getByRole('button', { name: 'キャンセル', exact: true }).click({ force: true });
+  await alert.getByRole('button', { name: 'キャンセル', exact: true }).click();
   await expect(alert).toHaveCount(0);
   await expect(review).toBeVisible();
   await expect(expected.field).toHaveValue(expected.value);
