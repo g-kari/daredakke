@@ -47,7 +47,7 @@ export default function FriendRecord() {
   const [revision, setRevision] = useState(0);
   const [namespace, setNamespace] = useState<string | null>(null);
   const [checkingSession, setCheckingSession] = useState(false);
-  const [readFailure, setReadFailure] = useState<'load' | 'session' | null>(null);
+  const [readFailure, setReadFailure] = useState<'load' | 'session' | 'save' | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [tab, setTab] = useState('people');
@@ -99,7 +99,7 @@ export default function FriendRecord() {
   const importReadEpoch = useRef(0);
   const sessionPending = useRef(false);
   const recordLoad = useRef<AbortController | null>(null);
-  const readRecovery = useRef<'load' | 'session' | null>(null);
+  const readRecovery = useRef<'load' | 'session' | 'save' | null>(null);
   const sessionRetry = useRef<() => void>(() => {});
   const inputFile = useRef<HTMLInputElement>(null);
   const importReviewHeading = useRef<HTMLHeadingElement>(null);
@@ -261,9 +261,9 @@ export default function FriendRecord() {
     setDiscard(null);
     if (pending && pending.epoch === identityEpoch.current && !sessionPending.current) pending.run();
   }
-  function requireReadRecovery(kind: 'load' | 'session') {
-    // Keep private state/drafts only in this component's memory. A timeout is
-    // inconclusive, so identity stays unverified until an explicit fresh check.
+  function requireReadRecovery(kind: 'load' | 'session' | 'save') {
+    // Keep private state/drafts only in this component's memory. An inconclusive
+    // response leaves identity unverified until an explicit fresh check.
     readRecovery.current = kind; setReadFailure(kind);
     sessionPending.current = true; setCheckingSession(false);
   }
@@ -343,8 +343,14 @@ export default function FriendRecord() {
       const response = await fetch('/api/records', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Friend-Record': '1' }, body: JSON.stringify({ scope, revision, state: next, expectedNamespace: expected }) });
       const result = await response.json().catch(() => null) as { error?: string; revision?: number; code?: string } | null;
       if (epoch !== identityEpoch.current || expected !== namespaceRef.current) return false;
-      if (identityChanged(response.status, result) || !result) { const reason = result?.error || 'ログインを確認できません。再読み込みしてください。'; clearSessionData(reason); toast.error(reason); return false; }
-      if (!response.ok || typeof result.revision !== 'number') throw new Error(result.error || '保存できませんでした。');
+      if (identityChanged(response.status, result)) { const reason = typeof result?.error === 'string' ? result.error : 'ログインを確認できません。再読み込みしてください。'; clearSessionData(reason); toast.error(reason); return false; }
+      if (!result || typeof result !== 'object' || Array.isArray(result) || (response.ok && (typeof result.revision !== 'number' || !Number.isSafeInteger(result.revision) || result.revision !== revision + 1))) {
+        // A lost/unusable acknowledgment is not proof of logout or failure to
+        // commit. Keep drafts/revision, veil private UI and never replay POST.
+        const reason = '保存結果を確認できませんでした。保存された可能性があります。入力はこのページに残しています。本人確認後に入力を控え、別のタブで保存済みの内容を確認してから、必要な場合だけ保存してください。';
+        setError(reason); setFormError(reason); pauseConfirmationsForSession(); requireReadRecovery('save'); return false;
+      }
+      if (!response.ok || typeof result.revision !== 'number') throw new Error(typeof result.error === 'string' ? result.error : '保存できませんでした。');
       setState(next); setRevision(result.revision); toast.success(message); return true;
     } catch (e) { if (epoch !== identityEpoch.current || expected !== namespaceRef.current) return false; const message = e instanceof Error ? e.message : '保存できませんでした。'; setError(message); setFormError(message); toast.error(message); return false; }
     finally { setBusy(false); }
@@ -509,13 +515,13 @@ export default function FriendRecord() {
       </div>
     </div>;
   }
-  if (readFailure) return <div className="app-shell read-recovery"><main className="main" aria-labelledby="read-recovery-title"><h1 id="read-recovery-title">ログインを確認できませんでした</h1><p role="alert">読み込みが時間内に完了しませんでした。記録と入力は、本人の確認が済むまで表示しません。</p>{readFailure === 'session' && <p>未保存の入力はこのページのメモリー内だけに残っています。同じログインを確認できれば編集に戻れます。ページを閉じると失われます。</p>}<Button onClick={() => { if (readFailure === 'session') sessionRetry.current(); else setReloadKey(k => k + 1); }}>{readFailure === 'session' ? 'ログインを再確認する' : 'もう一度読み込む'}</Button></main></div>;
+  if (readFailure) return <div className="app-shell read-recovery"><main className="main" aria-labelledby="read-recovery-title"><h1 id="read-recovery-title">{readFailure === 'save' ? '保存結果を確認できませんでした' : 'ログインを確認できませんでした'}</h1><p role="alert">{readFailure === 'save' ? '保存された可能性があります。自動では再送しません。記録と入力は、本人の確認が済むまで表示しません。' : '読み込みが時間内に完了しませんでした。記録と入力は、本人の確認が済むまで表示しません。'}</p>{readFailure !== 'load' && <p>未保存の入力はこのページのメモリー内だけに残っています。同じログインを確認できれば編集に戻れます。ページを閉じると失われます。</p>}<Button onClick={() => { if (readFailure !== 'load') sessionRetry.current(); else setReloadKey(k => k + 1); }}>{readFailure !== 'load' ? 'ログインを再確認する' : 'もう一度読み込む'}</Button></main></div>;
   if (checkingSession) return <div className="app-shell"><main className="main"><p role="status">ログインを確認しています…</p></main></div>;
   return <div className="app-shell" onPointerDownCapture={() => { accountReveal.current = null; }} onKeyDownCapture={() => { accountReveal.current = null; }} onInputCapture={() => { accountReveal.current = null; }}>
     <Toaster position="bottom-center" richColors />
     <a className="skip-link" href="#main">メインへ移動</a>
     <aside className="service-rail" aria-label="サービスで絞り込み"><span className="rail-brand" aria-hidden="true"><Users size={23} /></span><div className="rail-filters"><button className={'service-filter' + (serviceFilter === 'all' ? ' active' : '')} aria-pressed={serviceFilter === 'all'} onClick={() => setServiceFilter('all')}><span className="rail-symbol"><LayoutGrid size={23} aria-hidden="true" /></span><span>すべて</span></button>{services.map(service => <button key={service} className={'service-filter' + (serviceFilter === service ? ' active' : '')} aria-pressed={serviceFilter === service} onClick={() => setServiceFilter(service)}><span className="rail-symbol" aria-hidden="true"><ServiceMark service={service} /></span><span>{service}</span></button>)}</div></aside>
-    <header className="app-header"><div className="brand"><h1>だれだっけ</h1></div><div className="header-workspace"><div className="scope-switch" role="group" aria-label="保存先"><Button variant={scope === 'demo' ? 'secondary' : 'ghost'} aria-pressed={scope === 'demo'} onClick={() => switchScope('demo')} disabled={busy || !state && !error}>デモ</Button><Button variant={scope === 'personal' ? 'secondary' : 'ghost'} aria-pressed={scope === 'personal'} onClick={() => switchScope('personal')} disabled={busy || !state && !error}>マイレコード</Button></div><span className="scope-label">{scope === 'demo' ? '架空データ' : '自分の記録'}</span></div><span className="save-status" role="status">{busy ? <><LoaderCircle className="spin" size={14} aria-hidden="true" />保存中</> : state ? <><Check size={14} aria-hidden="true" />保存済み</> : '読み込み中…'}</span><div className="private-label"><LockKeyhole size={14} aria-hidden="true" />本人専用</div></header>
+    <header className="app-header"><div className="brand"><h1>だれだっけ</h1></div><div className="header-workspace"><div className="scope-switch" role="group" aria-label="保存先"><Button variant={scope === 'demo' ? 'secondary' : 'ghost'} aria-pressed={scope === 'demo'} onClick={() => switchScope('demo')} disabled={busy || !state && !error}>デモ</Button><Button variant={scope === 'personal' ? 'secondary' : 'ghost'} aria-pressed={scope === 'personal'} onClick={() => switchScope('personal')} disabled={busy || !state && !error}>マイレコード</Button></div><span className="scope-label">{scope === 'demo' ? '架空データ' : '自分の記録'}</span></div><span className="save-status" role="status">{busy ? <><LoaderCircle className="spin" size={14} aria-hidden="true" />保存中</> : state && error ? '保存状態を確認してください' : state ? <><Check size={14} aria-hidden="true" />保存済み</> : '読み込み中…'}</span><div className="private-label"><LockKeyhole size={14} aria-hidden="true" />本人専用</div></header>
     <main id="main" className="main" tabIndex={-1}>
       {error && <div className="error-banner" role="alert"><p>{error}</p><Button variant="outline" onClick={() => setReloadKey(k => k + 1)} disabled={busy}>再読み込み</Button></div>}
       <Tabs value={tab} onValueChange={setTab} className="workspace-tabs">
