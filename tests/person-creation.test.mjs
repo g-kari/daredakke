@@ -39,7 +39,7 @@ function harness({ query = '', serviceFilter = 'all', tab = 'people', data = dem
   const view = { query, serviceFilter, tab, selected: data.people[0]?.id ?? null, personDraft: draft, state: { data, undo: [] }, cleared: [], notices: [] };
   const updates = [];
   const context = {
-    data, personDraft: draft, query, serviceFilter, tab,
+    data, personDraft: draft, accountDraft: null, query, serviceFilter, tab,
     filtersRef: { current: { query, serviceFilter } },
     profileFocus: { current: null }, identityEpoch: { current: 0 }, sessionPending: { current: false },
     colors, crypto: { randomUUID: () => 'synthetic-created-id' },
@@ -60,7 +60,7 @@ function harness({ query = '', serviceFilter = 'all', tab = 'people', data = dem
   };
   for (const name of ['Query', 'ServiceFilter', 'Tab', 'Selected', 'PersonDraft']) {
     const key = name[0].toLowerCase() + name.slice(1);
-    context['set' + name] = value => { view[key] = value; };
+    context['set' + name] = value => { view[key] = value; if (key === 'personDraft') context.personDraft = value; };
   }
   const run = new Function(...Object.keys(context), compile(submitNode.getText(source)) + '\nreturn submitPerson;')(...Object.values(context));
   const render = () => select(view.state.data, view.query, view.serviceFilter, view.selected, createRecordSearch, searchPeople);
@@ -190,7 +190,7 @@ test('source-bound new profile close focuses its new row instead of a stale prev
 for (const condition of ['same-owner', 'changed-epoch', 'session-pending', 'disconnected']) {
   test('source-bound existing profile focus keeps its ' + condition + ' guard', () => {
     assert.ok(closeProfileNode, 'the actual mobile Sheet close callback exists');
-    const h = harness(); let focused = 0, prevented = 0;
+    const h = harness({ draft: null }); let focused = 0, prevented = 0;
     h.context.profileFocus.current = { target: { isConnected: condition !== 'disconnected', focus: () => { focused++; } }, epoch: 0 };
     if (condition === 'changed-epoch') h.context.identityEpoch.current = 1;
     if (condition === 'session-pending') h.context.sessionPending.current = true;
