@@ -17,7 +17,7 @@ const recovery = page => page.getByRole('heading', { name: '保存結果を確�
 const retry = page => page.getByRole('button', { name: 'ログインを再確認する', exact: true });
 const review = dialog => dialog.getByRole('region', { name: '読み込み内容の確認', exact: true });
 
-async function start(page) {
+async function start(page, { pauseClock = true } = {}) {
   const api = { state: initialState(), revision: initialRevision, namespace: namespaceA, requests: [], posts: [], responses: [], nextSession: null, violations: [], errors: [], downloads: [] };
   fixtures.set(page, api);
   page.on('pageerror', error => api.errors.push(error.message));
@@ -90,9 +90,11 @@ async function start(page) {
     api.violations.push(`${method} ${url.pathname}${url.search}`);
     return route.abort();
   });
-  await page.clock.install({ time: new Date('2026-10-19T00:00:00Z') });
-  await page.clock.pauseAt(new Date('2026-10-19T00:00:01Z'));
-  await page.goto('/');
+  if (pauseClock) {
+    await page.clock.install({ time: new Date('2026-10-19T00:00:00Z') });
+    await page.clock.pauseAt(new Date('2026-10-19T00:00:01Z'));
+  }
+  await page.goto('/', { waitUntil: pauseClock ? 'load' : 'domcontentloaded' });
   await expect(page.getByText('保存済み', { exact: true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.__daredakkeTools.has('search_friend_records'))).toBe(true);
   return api;
@@ -354,4 +356,58 @@ test('committed malformed acknowledgment never auto-replays; explicit stale retr
   expect(api.posts.map(post => post.state.undo.length)).toEqual([2, 2]);
   expect(api.state).toEqual(committed); expect(api.revision).toBe(initialRevision + 1);
   expect(api.state.data.people.filter(person => person.name === 'Unsaved synthetic friend')).toHaveLength(1);
+});
+
+for (const animation of ['native', 'animate-ui']) test(`existing profile opener survives save recovery after a ${animation} Sheet session`, async ({ page }, info) => {
+  test.skip(!info.project.use.isMobile, 'The profile Sheet is mobile-only');
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  await page.route('**/assets/dialog-*.js', async route => { await gate; await route.fallback(); });
+  const chunkResponse = page.waitForResponse(response => /\/assets\/dialog-[^/]+\.js$/.test(new URL(response.url()).pathname));
+  try {
+    const api = await start(page, { pauseClock: false });
+    const beforeState = structuredClone(api.state);
+    const opener = page.getByRole('button', { name: 'Saved synthetic friendの記録を開く', exact: true });
+    const originalRow = await opener.elementHandle();
+    await opener.focus(); await page.keyboard.press('Enter');
+    const sheet = page.getByRole('dialog', { name: 'Saved synthetic friend', exact: true });
+    await expect(sheet).toHaveAttribute('data-animation-source', 'native');
+    if (animation === 'animate-ui') {
+      release(); await (await chunkResponse).finished();
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      // Loading cannot replace the open fallback. A fresh opening may use Animate UI.
+      await expect(sheet).toHaveAttribute('data-animation-source', 'native');
+      await page.keyboard.press('Escape'); await expect(sheet).toHaveCount(0); await expect(opener).toBeFocused();
+      await page.keyboard.press('Enter'); await expect(sheet).toHaveAttribute('data-animation-source', 'animate-ui');
+    }
+    await sheet.getByRole('button', { name: '編集', exact: true }).click();
+    const editor = page.getByRole('dialog', { name: '人の記録を編集', exact: true });
+    const note = editor.getByRole('textbox', { name: 'メモ', exact: true });
+    const exactNote = 'Unsaved nested synthetic note\n  Exact second line  ';
+    await note.fill(exactNote);
+    api.responses.push(failures[0]);
+    await editor.getByRole('button', { name: '保存する', exact: true }).click();
+    await expect(recovery(page)).toBeVisible(); await blocked(page);
+    expect(await originalRow.evaluate(node => node.isConnected), 'Recovery must really unmount the old row').toBe(false);
+    expect(api.posts).toHaveLength(1);
+    const beforeVerification = structuredClone(api.requests);
+    await retry(page).click();
+    await expect(editor).toBeVisible(); await expect(note).toHaveValue(exactNote);
+    await expect(editor.getByRole('alert')).toHaveText(warning);
+    await expect(sheet).toBeVisible();
+    // Intentional recovery remount starts a new native Sheet session, even if the old one used animation.
+    await expect(sheet).toHaveAttribute('data-animation-source', 'native');
+    expect(api.requests).toEqual([...beforeVerification, { method: 'GET', path: '/api/session' }]);
+    await editor.getByRole('button', { name: 'キャンセル', exact: true }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: '入力を破棄する', exact: true }).click();
+    await expect(editor).toHaveCount(0);
+    await sheet.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(page.locator('[data-slot="sheet-content"]')).toHaveCount(0);
+    // No test-side focus call after recovery: this is the actual live replacement row.
+    await expect(opener).toBeFocused();
+    expect(api.requests).toEqual([...beforeVerification, { method: 'GET', path: '/api/session' }]);
+    expect(api.posts).toHaveLength(1); expect(api.state).toEqual(beforeState); expect(api.revision).toBe(initialRevision);
+  } finally {
+    release(); await (await chunkResponse).finished();
+  }
 });
