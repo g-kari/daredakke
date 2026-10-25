@@ -383,6 +383,7 @@ for (const animation of ['native', 'animate-ui']) test(`existing profile opener 
     await sheet.getByRole('button', { name: '編集', exact: true }).click();
     const editor = page.getByRole('dialog', { name: '人の記録を編集', exact: true });
     const note = editor.getByRole('textbox', { name: 'メモ', exact: true });
+    await expect(page.locator('[data-slot="sheet-content"]')).toHaveCount(0);
     const exactNote = 'Unsaved nested synthetic note\n  Exact second line  ';
     await note.fill(exactNote);
     api.responses.push(failures[0]);
@@ -394,13 +395,22 @@ for (const animation of ['native', 'animate-ui']) test(`existing profile opener 
     await retry(page).click();
     await expect(editor).toBeVisible(); await expect(note).toHaveValue(exactNote);
     await expect(editor.getByRole('alert')).toHaveText(warning);
-    await expect(sheet).toBeVisible();
-    // Intentional recovery remount starts a new native Sheet session, even if the old one used animation.
-    await expect(sheet).toHaveAttribute('data-animation-source', 'native');
+    // The recovered editor is the sole active modal; its real accessible controls stay usable.
+    await expect(page.locator('[data-slot="sheet-content"]')).toHaveCount(0);
+    await expect(editor.getByLabel('名前 必須', { exact: true })).toHaveValue('Saved synthetic friend');
+    await expect(editor.getByLabel('別名', { exact: true })).toHaveValue('');
+    await expect(editor.getByLabel('タグ', { exact: true })).toHaveValue('');
     expect(api.requests).toEqual([...beforeVerification, { method: 'GET', path: '/api/session' }]);
+    await editor.getByRole('button', { name: 'キャンセル', exact: true }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: '編集を続ける', exact: true }).click();
+    await expect(page.getByRole('alertdialog')).toHaveCount(0);
+    await expect(note).toHaveValue(exactNote);
+    await expect(page.locator('[data-slot="sheet-content"]')).toHaveCount(0);
     await editor.getByRole('button', { name: 'キャンセル', exact: true }).click();
     await page.getByRole('alertdialog').getByRole('button', { name: '入力を破棄する', exact: true }).click();
     await expect(editor).toHaveCount(0);
+    await expect(sheet).toBeVisible();
+    await expect(sheet).toHaveAttribute('data-animation-source', animation);
     await sheet.getByRole('button', { name: 'Close', exact: true }).click();
     await expect(page.locator('[data-slot="sheet-content"]')).toHaveCount(0);
     // No test-side focus call after recovery: this is the actual live replacement row.

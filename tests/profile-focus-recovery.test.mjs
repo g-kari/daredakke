@@ -22,7 +22,7 @@ const compile = node => ts.transpileModule('const callback = (' + node.getText(s
 const bind = (node, context) => new Function(...Object.keys(context), compile(node))(...Object.values(context));
 function harness() {
   const old = { isConnected: true, focused: 0, focus() { this.focused++; } }, next = { isConnected: true, focused: 0, focus() { this.focused++; } };
-  const context = { p: { id: 'synthetic-existing-person' }, profileFocus: { current: null }, identityEpoch: { current: 7 }, sessionPending: { current: false }, setSelected() {}, setMergeTarget() {}, setMergeError() {}, setTab() {} };
+  const context = { p: { id: 'synthetic-existing-person' }, profileFocus: { current: null }, identityEpoch: { current: 7 }, sessionPending: { current: false }, personDraft: null, accountDraft: null, setSelected() {}, setMergeTarget() {}, setMergeError() {}, setTab() {} };
   const open = bind(openNode, context), ref = bind(refNode, context), close = bind(closeNode, context);
   const event = { prevented: 0, preventDefault() { this.prevented++; } };
   open({ currentTarget: old });
@@ -34,4 +34,6 @@ test('a different person row cannot replace the ordinary opener intent', () => {
 test('an identity epoch change prevents retargeting and focus', () => { const h = harness(); h.context.identityEpoch.current++; h.remount(); assert.equal(h.context.profileFocus.current.target, h.old); h.close(h.event); assert.equal(h.next.focused, 0); assert.equal(h.event.prevented, 0); });
 test('pending owner verification prevents focus even when the row is live', () => { const h = harness(); h.remount(); h.context.sessionPending.current = true; h.close(h.event); assert.equal(h.next.focused, 0); assert.equal(h.event.prevented, 0); });
 test('a removed opener without a replacement is never focused', () => { const h = harness(); h.old.isConnected = false; h.ref(null); h.close(h.event); assert.equal(h.old.focused, 0); assert.equal(h.next.focused, 0); assert.equal(h.event.prevented, 0); });
+test('a person editor owns focus while the profile Sheet closes behind it', () => { const h = harness(); bind(closeNode, { ...h.context, personDraft: { id: 'synthetic-existing-person' } })(h.event); assert.equal(h.old.focused, 0); assert.equal(h.next.focused, 0); assert.equal(h.event.prevented, 1); });
+test('an account editor owns focus while the profile Sheet closes behind it', () => { const h = harness(); bind(closeNode, { ...h.context, accountDraft: { id: 'synthetic-existing-account' } })(h.event); assert.equal(h.old.focused, 0); assert.equal(h.next.focused, 0); assert.equal(h.event.prevented, 1); });
 console.log(JSON.stringify({ method: 'actual TS AST-extracted application callbacks with synthetic row objects, not rendered browser/React lifecycle verification', sourceSHA256: createHash('sha256').update(raw).digest('hex'), expected: 'same-owner remount restoration and all identity/session guards' }));
