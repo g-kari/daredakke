@@ -1,5 +1,20 @@
 import { test, expect } from '@playwright/test';
 const namespace = 'u_' + 'a'.repeat(64);
+// Preserve the two five-second application-time checks without spending five
+// real seconds idle. runFor fires every due timer; native animation and network
+// still use ordinary actionability, and the actual toast must fully disappear.
+async function letErrorToastExpire(page) {
+  const toast = page.locator('[data-sonner-toast][data-type="error"]');
+  await expect(toast).toBeVisible();
+  await expect(toast).toHaveAttribute('data-mounted', 'true');
+  await expect(toast).toHaveAttribute('data-visible', 'true');
+  await page.mouse.move(0, 0);
+  await expect(toast).toHaveAttribute('data-expanded', 'false');
+  const before = await page.evaluate(() => Date.now());
+  await page.clock.runFor(5000);
+  expect(await page.evaluate(() => Date.now()) - before).toBeGreaterThanOrEqual(5000);
+  await expect(toast).toHaveCount(0);
+}
 for (const length of [80, 81, 100]) test(`merge name ${length} respects the existing alias limit before confirmation`, async ({ page }, info) => {
   const sourceName = '名'.repeat(length), person = (id, name) => ({ id, name, aliases: [], tags: [], notes: '', color: '#4f5fcb' });
   const api = { state: { data: { people: [person('target', '統合先'), person('source', sourceName)], accounts: ['target', 'source'].map((personId, i) => ({ id: 'account' + i, service: 'X', label: 'synthetic', key: 'X:synthetic', url: 'https://x.com/synthetic', personId })) }, undo: [] }, posts: [], errors: [], violations: [] };
@@ -16,6 +31,7 @@ for (const length of [80, 81, 100]) test(`merge name ${length} respects the exis
     }
     api.violations.push(`${request.method()} ${url.pathname}`); return route.abort();
   });
+  if (length > 80) await page.clock.install();
   await page.goto('/'); await expect(page.getByText('保存済み', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '統合先の記録を開く', exact: true }).click();
   const profile = info.project.use.isMobile ? page.getByRole('dialog', { name: '統合先', exact: true }) : page.getByRole('article', { name: '統合先のプロフィール' });
@@ -31,7 +47,7 @@ for (const length of [80, 81, 100]) test(`merge name ${length} respects the exis
   } else {
     await expect(profile.getByRole('alert').filter({ hasText: '統合元の名前は別名として引き継ぐため80文字までです。名前を短くしてから、もう一度統合してください。' })).toBeVisible();
     await expect(profile.getByRole('button', { name: 'この人に統合する', exact: true })).toHaveAccessibleDescription(/80文字/);
-    await page.waitForTimeout(5000);
+    await letErrorToastExpire(page);
     await expect(profile.getByRole('alert')).toBeVisible();
     await profile.getByRole('combobox', { name: '統合する別の人' }).click();
     await page.getByRole('option', { name: '統合する人を選ぶ', exact: true }).click();
@@ -42,7 +58,7 @@ for (const length of [80, 81, 100]) test(`merge name ${length} respects the exis
     await duplicates.getByRole('button', { name: 'この2人を統合', exact: true }).click();
     await expect(duplicates.getByRole('alert')).toHaveText(/80文字/);
     await expect(duplicates.getByRole('button', { name: 'この2人を統合', exact: true })).toHaveAccessibleDescription(/80文字/);
-    await page.waitForTimeout(5000);
+    await letErrorToastExpire(page);
     await expect(duplicates.getByRole('alert')).toBeVisible();
     await page.getByRole('tab', { name: '保存・バックアップ', exact: true }).click();
     await page.getByRole('tab', { name: /重複候補/ }).click();
