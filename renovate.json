@@ -1,0 +1,69 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "automerge": false,
+  "automergeType": "pr",
+  "platformAutomerge": false,
+  "ignoreTests": false,
+  "ignoreScripts": true,
+  "rebaseWhen": "behind-base-branch",
+  "minimumReleaseAge": "14 days",
+  "minimumReleaseAgeBehaviour": "timestamp-required",
+  "internalChecksFilter": "strict",
+  "packageRules": [
+    {
+      "description": "Keep every dependency review-first unless explicitly allowed below.",
+      "matchPackageNames": [
+        "*"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Automerge non-major updates for existing official GitHub Actions in the tested workflows after release-age and CI checks pass.",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchPackageNames": [
+        "actions/checkout",
+        "actions/setup-node",
+        "actions/upload-artifact"
+      ],
+      "matchFileNames": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/unsaved-input-browser.yml"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "digest",
+        "pinDigest"
+      ],
+      "minimumReleaseAge": "14 days",
+      "minimumReleaseAgeBehaviour": "timestamp-required",
+      "internalChecksFilter": "strict",
+      "ignoreTests": false,
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": false,
+      "ignoreScripts": true,
+      "rebaseWhen": "behind-base-branch"
+    },
+    {
+      "description": "Review pre-1.0 dependency changes explicitly.",
+      "matchCurrentVersion": "/^v?0\\./",
+      "automerge": false
+    }
+  ],
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "minimumReleaseAge": null,
+    "automerge": false
+  },
+  "lockFileMaintenance": {
+    "enabled": false,
+    "automerge": false
+  }
+}
