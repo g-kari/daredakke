@@ -1,9 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "config:recommended",
-    "helpers:pinGitHubActionDigests"
-  ],
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
   "automerge": false,
   "automergeType": "pr",
   "platformAutomerge": false,
@@ -16,36 +13,20 @@
   "packageRules": [
     {
       "description": "Keep every dependency review-first unless explicitly allowed below.",
-      "matchPackageNames": [
-        "*"
-      ],
+      "matchPackageNames": ["*"],
       "automerge": false
     },
     {
-      "description": "Automerge non-major updates for existing official GitHub Actions in the tested workflows after release-age and CI checks pass.",
-      "matchManagers": [
-        "github-actions"
-      ],
-      "matchPackageNames": [
-        "actions/checkout",
-        "actions/setup-node",
-        "actions/upload-artifact"
-      ],
-      "matchFileNames": [
-        ".github/workflows/ci.yml",
-        ".github/workflows/unsaved-input-browser.yml"
-      ],
-      "matchUpdateTypes": [
-        "minor",
-        "patch",
-        "digest",
-        "pinDigest"
-      ],
+      "description": "Keep these updates manual until required real CI checks are enforced and verified.",
+      "matchManagers": ["github-actions"],
+      "matchPackageNames": ["actions/checkout", "actions/setup-node", "actions/upload-artifact"],
+      "matchFileNames": [".github/workflows/ci.yml", ".github/workflows/unsaved-input-browser.yml"],
+      "matchUpdateTypes": ["minor", "patch", "digest", "pinDigest"],
       "minimumReleaseAge": "14 days",
       "minimumReleaseAgeBehaviour": "timestamp-required",
       "internalChecksFilter": "strict",
       "ignoreTests": false,
-      "automerge": true,
+      "automerge": false,
       "automergeType": "pr",
       "platformAutomerge": false,
       "ignoreScripts": true,
@@ -54,6 +35,11 @@
     {
       "description": "Review pre-1.0 dependency changes explicitly.",
       "matchCurrentVersion": "/^v?0\\./",
+      "automerge": false
+    },
+    {
+      "description": "Fail closed: keep every dependency manual until required real CI checks are enforced and verified.",
+      "matchPackageNames": ["*"],
       "automerge": false
     }
   ],
