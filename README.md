@@ -25,7 +25,7 @@ Cloudflare Workers + D1版は https://daredakke.0g0.xyz に本人限定で配備
 
 Node.js 22.13以上が必要です。クラウドへの認証やAPIトークンは不要です。
 
-pnpm 11.25.0を使用します。未導入なら `npm install --global pnpm@11.25.0` で固定版を準備してください。依存関係は `pnpm-lock.yaml` を正として、CIと同じfrozen installを使います。Node.jsの既存要件は変更しません。
+pnpmは `package.json` の `packageManager` に指定した固定版を使用します。未導入なら、リポジトリのルートで `npm install --global "$(node -p 'require("./package.json").packageManager')"` を実行してください。依存関係は `pnpm-lock.yaml` を正として、CIと同じfrozen installを使います。Node.jsの既存要件は変更しません。
 
 1. pnpm install --frozen-lockfile
 2. pnpm run types
