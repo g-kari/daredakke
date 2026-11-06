@@ -132,7 +132,10 @@ export default function FriendRecord() {
     const intent = accountReveal.current;
     if (!intent?.ready || sessionPending.current || checkingSession) return;
     const current = () => accountReveal.current === intent && intent.epoch === identityEpoch.current && intent.namespace === namespaceRef.current && !sessionPending.current && revealView.current.tab === (intent.personId ? 'people' : 'unresolved') && revealView.current.selected === intent.personId && filtersRef.current.query === intent.query && filtersRef.current.serviceFilter === intent.serviceFilter;
-    if (!current() || tab !== (intent.personId ? 'people' : 'unresolved') || selected !== intent.personId) { accountReveal.current = null; return; }
+    // Sheet close can retain the previous render's callback. The live refs
+    // already guard the current tab/selection; stale closure values must not
+    // erase an otherwise current reveal after explicit navigation.
+    if (!current()) { accountReveal.current = null; return; }
     const target = accountRows.current.get(intent.id);
     if (!target?.isConnected) { if (!stateRef.current?.data.accounts.some(a => a.id === intent.id)) accountReveal.current = null; return; }
     if (accountRevealFrame.current !== null) cancelAnimationFrame(accountRevealFrame.current);

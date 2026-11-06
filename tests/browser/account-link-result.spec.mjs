@@ -100,6 +100,7 @@ test('dismissal preserves saved data and later relink shows only its latest resu
   await expect(result(page)).toBeVisible(); const saved = structuredClone(api.state);
   await result(page).getByRole('button', { name: '閉じる', exact: true }).click();
   await expect(result(page)).toHaveCount(0); expect(api.state).toEqual(saved); expect(api.posts).toHaveLength(1);
+  await page.getByRole('tab', { name: /^人 / }).click();
   await page.getByRole('button', { name: 'Source personの記録を開く', exact: true }).click();
   await relink(page, 'Moving voice', 'Target person');
   await expect(result(page)).toContainText('Moving voice'); await expect(result(page)).not.toContainText('Loose voice');

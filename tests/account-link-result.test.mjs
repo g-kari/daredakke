@@ -133,6 +133,37 @@ test('undo invalidates the result even when a later relink restores the same tar
   h.c.stateRef.current = change(h.c.stateRef.current, { ...h.c.data, accounts: h.c.data.accounts.map(a => a.id === 'demo-c7' ? { ...a, personId: 'demo-yuki' } : a) }, 'Synthetic later relink');
   h.c.data = h.c.stateRef.current.data; h.c.revision++; assert.equal(h.result(), null);
 });
+function capturedSheetClose(h) {
+  const start = source.indexOf('onCloseAutoFocus={event => {', source.indexOf('<SheetContent')) + 'onCloseAutoFocus={'.length;
+  const end = source.indexOf('}><SheetHeader>', start); assert.ok(start > 0 && end > start);
+  // A closing modal may retain the render from before explicit navigation.
+  const context = { ...h.c, revealCreatedAccount: bind('revealCreatedAccount', h.c) };
+  return new Function(...Object.keys(context), 'return (' + source.slice(start, end) + ');')(...Object.values(context));
+}
+test('mobile unlink close from the previous render uses the latest guarded view refs', async () => {
+  const h = harness({ compact: true, selected: 'demo-aoi', query: 'あおい', service: 'Discord' });
+  await h.link('demo-c1', 'none'); const close = capturedSheetClose(h);
+  h.open(); const events = [];
+  h.c.accountRows.current.set('demo-c1', { isConnected: true, focus: () => events.push('focus'), scrollIntoView: () => events.push('scroll') });
+  let prevented = 0; close({ preventDefault() { prevented++; } }); h.flush();
+  assert.equal(prevented, 1); assert.deepEqual(events, ['focus', 'scroll']);
+  assert.equal(h.c.accountReveal.current, null); assert.equal(writes(h).length, 1);
+});
+for (const stale of ['epoch', 'namespace', 'navigation', 'query', 'service', 'session', 'disconnected']) {
+  test(`previous-render Sheet close still rejects a newer ${stale} change`, async () => {
+    const h = harness({ compact: true, selected: 'demo-aoi' });
+    await h.link('demo-c1', 'none'); const close = capturedSheetClose(h); h.open(); const events = [];
+    h.c.accountRows.current.set('demo-c1', { isConnected: stale !== 'disconnected', focus: () => events.push('focus'), scrollIntoView: () => events.push('scroll') });
+    if (stale === 'epoch') h.c.identityEpoch.current++;
+    if (stale === 'namespace') h.c.namespaceRef.current = 'synthetic-owner-B';
+    if (stale === 'navigation') h.c.revealView.current.tab = 'people';
+    if (stale === 'query') h.c.filtersRef.current.query = 'newer query';
+    if (stale === 'service') h.c.filtersRef.current.serviceFilter = 'X';
+    if (stale === 'session') h.c.sessionPending.current = true;
+    close({ preventDefault() {} }); h.flush();
+    assert.deepEqual(events, []); assert.equal(writes(h).length, 1);
+  });
+}
 test('dismissal is UI-only; long names are read from records rather than saved to toast/history', async () => {
   const h = harness(); h.c.data.people.find(p => p.id === 'demo-yuki').name = '名'.repeat(100);
   await h.link('demo-c7', 'demo-yuki'); assert.equal(h.result().destination.name.length, 100);

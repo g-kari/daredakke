@@ -42,6 +42,8 @@ function harness({ query = '', serviceFilter = 'all', tab = 'people', data = dem
     data, personDraft: draft, accountDraft: null, query, serviceFilter, tab,
     filtersRef: { current: { query, serviceFilter } },
     profileFocus: { current: null }, identityEpoch: { current: 0 }, sessionPending: { current: false },
+    accountReveal: { current: null }, namespaceRef: { current: 'synthetic-owner' },
+    revealCreatedAccount() { assert.fail('person creation must not use an account-relink reveal'); },
     colors, crypto: { randomUUID: () => 'synthetic-created-id' },
     createRecordSearch, searchPeople,
     split: value => value.split(/[,、\n]/).map(part => part.trim()).filter(Boolean),
