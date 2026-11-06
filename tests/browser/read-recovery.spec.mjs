@@ -340,9 +340,12 @@ test('a timed-out session closes a dirty person discard alert without discarding
   await page.clock.runFor(60000);
   await expectDraft(page, 'person', expected);
   await expect(alert).toHaveCount(0);
-  await expected.dialog.getByRole('button', { name: 'キャンセル', exact: true }).click({ force: true });
+  // Deadline and non-revival assertions are complete. Resume modal transitions
+  // before explicit user actions so neither click can bypass pointer-event guards.
+  await page.clock.resume();
+  await expected.dialog.getByRole('button', { name: 'キャンセル', exact: true }).click();
   await expect(alert.getByRole('button', { name: '入力を破棄する', exact: true })).toBeVisible();
-  await alert.getByRole('button', { name: '編集を続ける', exact: true }).click({ force: true });
+  await alert.getByRole('button', { name: '編集を続ける', exact: true }).click();
   await expectDraft(page, 'person', expected);
   await expect(alert).toHaveCount(0);
 });
