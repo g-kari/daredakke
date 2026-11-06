@@ -23,6 +23,7 @@ type DraftKind = 'person' | 'account' | 'import';
 type DraftFocus = { kind: DraftKind; target: HTMLElement; dialog: HTMLElement; epoch: number };
 type Confirm = { title: string; message: string; action: string; run: () => Promise<void>; kind?: 'import' };
 type StagedImport = { review: ImportReview; text: string; source: string; baseline: RecordState; revision: number; namespace: string; epoch: number; readEpoch: number };
+type AccountLinkNotice = { id: string; personId: string | null; scope: 'demo' | 'personal'; revision: number; epoch: number; namespace: string | null };
 const blankPerson = (): PersonDraft => ({ name: '', aliases: '', tags: '', notes: '' });
 const split = (value: string) => value.split(/[,、\n]/).map(v => v.trim()).filter(Boolean);
 const services: Service[] = ['Discord', 'X', 'VRChat'];
@@ -54,6 +55,7 @@ export default function FriendRecord() {
   const [query, setQuery] = useState('');
   const [serviceFilter, setServiceFilter] = useState<Service | 'all'>('all');
   const [selected, setSelected] = useState<string | null>(null);
+  const [linkNotice, setLinkNotice] = useState<AccountLinkNotice | null>(null);
   const [personDraft, setPersonDraft] = useState<PersonDraft | null>(null);
   const [accountDraft, setAccountDraft] = useState<AccountDraft | null>(null);
   const [formError, setFormError] = useState('');
@@ -123,6 +125,7 @@ export default function FriendRecord() {
   useEffect(() => { setMergeError(''); }, [tab]);
   const accountMatch = (a: Account) => (serviceFilter === 'all' || a.service === serviceFilter) && match([a.label, a.url, a.service, data.people.find(p => p.id === a.personId)?.name || '']);
   const peopleChoices = [{ value: 'none', label: '未整理のまま' }, ...data.people.map(p => ({ value: p.id, label: p.name }))];
+  const linkResult = currentLinkResult();
   // Wait for the account modal to close before moving focus outside it.
   // The one-shot reveal is bound to the accepted save's identity.
   function revealCreatedAccount() {
@@ -150,6 +153,7 @@ export default function FriendRecord() {
     identityEpoch.current++;
     accountReveal.current = null;
     importReadEpoch.current++;
+    setLinkNotice(null);
     importConfirmationFocus.current = null;
     importSessionFocus.current = null; setImportConfirmationInterrupted(false);
     readRecovery.current = null; setReadFailure(null);
@@ -424,7 +428,47 @@ export default function FriendRecord() {
       }
     } catch (e) { setFormError((e as Error).message); }
   }
-  async function link(a: Account, target: string) { await update({ ...data, accounts: data.accounts.map(c => c.id === a.id ? { ...c, personId: target === 'none' ? null : target } : c) }, target === 'none' ? '紐づけを解除しました' : 'アカウントを紐づけました'); }
+  async function link(a: Account, target: string) {
+    const epoch = identityEpoch.current, expected = namespaceRef.current;
+    const personId = target === 'none' ? null : target;
+    if (await update({ ...data, accounts: data.accounts.map(c => c.id === a.id ? { ...c, personId } : c) }, target === 'none' ? '紐づけを解除しました' : 'アカウントを紐づけました')) {
+      if (epoch !== identityEpoch.current || expected !== namespaceRef.current) return;
+      setLinkNotice({ id: a.id, personId, scope, revision: revision + 1, epoch, namespace: expected });
+    }
+  }
+  function currentLinkResult() {
+    if (!linkNotice || !linkNotice.namespace || linkNotice.epoch !== identityEpoch.current || linkNotice.namespace !== namespaceRef.current || linkNotice.scope !== scope || linkNotice.revision !== revision || !stateRef.current) return null;
+    const current = stateRef.current.data;
+    const account = current.accounts.find(a => a.id === linkNotice.id && a.personId === linkNotice.personId);
+    if (!account) return null;
+    const destination = account.personId ? current.people.find(p => p.id === account.personId) : null;
+    if (account.personId && !destination) return null;
+    return { account, destination };
+  }
+  function openLinkedAccount() {
+    if (busy || sessionPending.current || personDraft || accountDraft || importOpen || exportOpen || confirmation || discard) return;
+    const result = currentLinkResult(), current = stateRef.current?.data;
+    if (!result || !current) return;
+    const { account } = result, filters = filtersRef.current;
+    const matchesQuery = account.personId
+      ? searchPeople(current, createRecordSearch(filters.query)).some(p => p.id === account.personId)
+      : createRecordSearch(filters.query).matches([account.label, account.url, account.service]);
+    const matchesService = filters.serviceFilter === 'all' || (account.personId
+      ? current.accounts.some(a => a.personId === account.personId && a.service === filters.serviceFilter)
+      : account.service === filters.serviceFilter);
+    if (!matchesQuery) setQuery('');
+    if (!matchesService) setServiceFilter('all');
+    // A mobile unlink closes the current Sheet. Let its close-autofocus event
+    // finish before focusing a row in the now-visible unresolved list.
+    accountReveal.current = { id: account.id, personId: account.personId, epoch: identityEpoch.current, namespace: namespaceRef.current, ready: !(compactProfile && person && !account.personId), query: matchesQuery ? filters.query : '', serviceFilter: matchesService ? filters.serviceFilter : 'all' };
+    setSelected(account.personId); setTab(account.personId ? 'people' : 'unresolved');
+    if (account.personId) profileFocus.current = { target: null, epoch: identityEpoch.current, personId: account.personId };
+    setLinkNotice(null);
+    if (!matchesQuery || !matchesService) toast.info('移動先を表示するため、絞り込みを解除しました');
+  }
+  function linkResultContent() {
+    return linkResult && <div className="link-result" role="status" aria-label="アカウントの移動結果"><p>「{linkResult.account.label}」の移動先: {linkResult.destination?.name || '未整理'}</p><div className="link-result-actions"><Button variant="outline" onClick={openLinkedAccount} disabled={busy}>移動先を確認</Button><Button variant="ghost" onClick={() => setLinkNotice(null)}>閉じる</Button></div></div>;
+  }
   function confirmMerge(target: string, source: string) {
     const a = data.people.find(p => p.id === target), b = data.people.find(p => p.id === source); if (!a || !b || a.id === b.id) return;
     setMergeError(''); setMergeErrorPair(target + ':' + source);
@@ -524,6 +568,7 @@ export default function FriendRecord() {
     <header className="app-header"><div className="brand"><h1>だれだっけ</h1></div><div className="header-workspace"><div className="scope-switch" role="group" aria-label="保存先"><Button variant={scope === 'demo' ? 'secondary' : 'ghost'} aria-pressed={scope === 'demo'} onClick={() => switchScope('demo')} disabled={busy || !state && !error}>デモ</Button><Button variant={scope === 'personal' ? 'secondary' : 'ghost'} aria-pressed={scope === 'personal'} onClick={() => switchScope('personal')} disabled={busy || !state && !error}>マイレコード</Button></div><span className="scope-label">{scope === 'demo' ? '架空データ' : '自分の記録'}</span></div><span className="save-status" role="status">{busy ? <><LoaderCircle className="spin" size={14} aria-hidden="true" />保存中</> : state && error ? '保存状態を確認してください' : state ? <><Check size={14} aria-hidden="true" />保存済み</> : '読み込み中…'}</span><div className="private-label"><LockKeyhole size={14} aria-hidden="true" />本人専用</div></header>
     <main id="main" className="main" tabIndex={-1}>
       {error && <div className="error-banner" role="alert"><p>{error}</p><Button variant="outline" onClick={() => setReloadKey(k => k + 1)} disabled={busy}>再読み込み</Button></div>}
+      {(!compactProfile || !person) && linkResultContent()}
       <Tabs value={tab} onValueChange={setTab} className="workspace-tabs">
         <div className="navigation-bar"><TabsList className="tab-list" variant="line"><TabsTrigger value="people">人<span className="count">{data.people.length}</span></TabsTrigger><TabsTrigger value="unresolved">未整理<span className="count">{unresolved.length}</span></TabsTrigger><TabsTrigger value="duplicates">重複候補<span className="count">{duplicate.length}</span></TabsTrigger><TabsTrigger value="settings">保存・バックアップ</TabsTrigger></TabsList></div>
         <div className={'workspace-content' + (tab === 'people' ? ' people-workspace' : '')}>
@@ -547,7 +592,7 @@ export default function FriendRecord() {
       <footer className="workspace-footer"><div className="backup-tools"><Button variant="ghost" onClick={() => setExportDialog(true)} disabled={!state || busy}><Download aria-hidden="true" />JSONを書き出す</Button><Button variant="ghost" onClick={() => { setFormError(''); setImportOpen(true); }} disabled={!state || busy}><Upload aria-hidden="true" />JSONを読み込む</Button><Button variant="ghost" onClick={() => { if (state) void save(undoChange(state), '直前の操作を元に戻しました'); }} disabled={busy || !state?.undo.length} title={state?.undo[0]?.label}><Undo2 aria-hidden="true" />元に戻す</Button></div><span>アカウントは手入力 / サービス未接続</span></footer>
       <input className="sr-only" ref={inputFile} type="file" accept="application/json,.json" onChange={e => void readFile(e.target.files?.[0])} aria-label="JSONファイルを選択" />
     </main>
-    {compactProfile && <Sheet open={!!person && !personDraft && !accountDraft} onOpenChange={open => { if (!open) setSelected(null); }}><SheetContent className="person-sheet" onCloseAutoFocus={event => { if (personDraft || accountDraft) { event.preventDefault(); return; } const focus = profileFocus.current; if (focus && focus.epoch === identityEpoch.current && !sessionPending.current && focus.target?.isConnected) { event.preventDefault(); focus.target.focus(); } }}><SheetHeader><SheetTitle>{person?.name || '人の記録'}</SheetTitle><SheetDescription>別名・メモ・アカウントをこの人にまとめる</SheetDescription></SheetHeader>{person && <div className="sheet-body">{profileContent(person)}</div>}</SheetContent></Sheet>}
+    {compactProfile && <Sheet open={!!person && !personDraft && !accountDraft} onOpenChange={open => { if (!open) setSelected(null); }}><SheetContent className="person-sheet" onCloseAutoFocus={event => { if (personDraft || accountDraft) { event.preventDefault(); return; } const intent = accountReveal.current; if (intent && !intent.ready && intent.epoch === identityEpoch.current && intent.namespace === namespaceRef.current) { event.preventDefault(); intent.ready = true; revealCreatedAccount(); return; } const focus = profileFocus.current; if (focus && focus.epoch === identityEpoch.current && !sessionPending.current && focus.target?.isConnected) { event.preventDefault(); focus.target.focus(); } }}><SheetHeader><SheetTitle>{person?.name || '人の記録'}</SheetTitle><SheetDescription>別名・メモ・アカウントをこの人にまとめる</SheetDescription></SheetHeader>{person && linkResultContent()}{person && <div className="sheet-body">{profileContent(person)}</div>}</SheetContent></Sheet>}
     <Dialog open={!!personDraft} onOpenChange={open => { if (!open) closePersonDraft(); }}><DialogContent className="record-dialog" onFocusCapture={event => rememberDraftFocus('person', event)}><DialogHeader><DialogTitle>{personDraft?.id ? '人の記録を編集' : '人を追加'}</DialogTitle><DialogDescription>{scope === 'demo' ? 'デモ保存先への登録です。' : 'マイレコードへの登録です。'} 呼びやすい名前でまとめておけます。</DialogDescription></DialogHeader>{personDraft && <form onSubmit={e => void submitPerson(e)} onChangeCapture={() => setFormStatus('')} className="record-form"><label>名前 <span className="required">必須</span><Input disabled={busy} autoFocus required maxLength={100} value={personDraft.name} onChange={e => setPersonDraft({ ...personDraft, name: e.target.value })} placeholder="いつも呼んでいる名前" /></label><label>別名<Input disabled={busy} maxLength={1600} value={personDraft.aliases} onChange={e => setPersonDraft({ ...personDraft, aliases: e.target.value })} placeholder="カンマ区切り。例: Ao, あおちゃん" /></label><label>タグ<Input disabled={busy} maxLength={1600} value={personDraft.tags} onChange={e => setPersonDraft({ ...personDraft, tags: e.target.value })} placeholder="カンマ区切り。例: VRChat, 制作" /></label><label>メモ<Textarea disabled={busy} maxLength={6000} rows={5} value={personDraft.notes} onChange={e => setPersonDraft({ ...personDraft, notes: e.target.value })} placeholder="どこで知り合ったか、覚えておきたいこと" /></label><p className="small-note">別名・タグはそれぞれ20個まで。パスワードや秘密情報は入れないでください。</p><p className={formStatus ? "small-note" : "sr-only"} role="status" aria-live="polite">{formStatus}</p>{formError && <p className="form-error" role="alert">{formError}</p>}<div className="form-actions"><Button type="button" variant="outline" onClick={closePersonDraft} disabled={busy}>キャンセル</Button><Button type="submit" disabled={busy}>{busy ? '保存中…' : '保存する'}</Button></div></form>}</DialogContent></Dialog>
     <Dialog open={!!accountDraft} onOpenChange={open => { if (!open) closeAccountDraft(); }}><DialogContent ref={accountDialog} className="record-dialog" onCloseAutoFocus={event => { const intent = accountReveal.current; if (intent && intent.epoch === identityEpoch.current && intent.namespace === namespaceRef.current) { event.preventDefault(); intent.ready = true; revealCreatedAccount(); } }} onFocusCapture={event => rememberDraftFocus('account', event)}><DialogHeader><DialogTitle>{accountDraft?.id ? 'アカウントを編集' : 'アカウントを追加'}</DialogTitle><DialogDescription>プロフィールURLまたはサービスのIDを登録します。外部サービスには接続しません。</DialogDescription></DialogHeader>{accountDraft && <form onSubmit={e => void submitAccount(e)} onChangeCapture={() => setFormStatus('')} className="record-form"><div className="form-label">サービス<Choice disabled={busy} label="登録するサービス" value={accountDraft.service} onChange={v => { setFormStatus(''); setAccountDraft({ ...accountDraft, service: v as Service, url: '' }); }} items={services.map(s => ({ value: s, label: s }))} /></div><label>表示名<Input disabled={busy} maxLength={100} value={accountDraft.label} onChange={e => setAccountDraft({ ...accountDraft, label: e.target.value })} placeholder="サービスでの表示名（任意）" /></label><label>プロフィールURL / ID <span className="required">必須</span><Input disabled={busy} required maxLength={500} value={accountDraft.url} onChange={e => setAccountDraft({ ...accountDraft, url: e.target.value })} placeholder={accountDraft.service === 'Discord' ? '17〜20桁のユーザーID' : accountDraft.service === 'X' ? '@username または https://x.com/username' : 'https://vrchat.com/home/user/usr_…'} /></label><div className="form-label">だれのアカウント？<Choice disabled={busy} label="アカウントの紐づけ先" value={accountDraft.personId} onChange={v => { setFormStatus(''); setAccountDraft({ ...accountDraft, personId: v }); }} items={peopleChoices} /></div><p className="small-note">Discordの表示名だけでは照合しません。数字のユーザーIDが必要です。URLの追跡パラメーターは保存時に取り除きます。</p><p className={formStatus ? "small-note" : "sr-only"} role="status" aria-live="polite">{formStatus}</p>{formError && <p className="form-error" role="alert">{formError}</p>}<div className="form-actions"><Button type="button" variant="outline" onClick={closeAccountDraft} disabled={busy}>キャンセル</Button><Button type="submit" disabled={busy}>{busy ? '保存中…' : '保存する'}</Button></div></form>}</DialogContent></Dialog>
     <Dialog open={importOpen} onOpenChange={open => { if (!open) closeImport(); }}><DialogContent className="record-dialog import-dialog" onFocusCapture={event => rememberDraftFocus('import', event)}>
