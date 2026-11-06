@@ -40,7 +40,7 @@ function harness() {
     fetch: async (url, options = {}) => { requests.push({ url, ...options }); assert.ok(responses.length, 'only planned synthetic requests are allowed'); return responses.shift()(url, options); },
     toast: { error: text => view.notices.push({ kind: 'error', text }), success: text => view.notices.push({ kind: 'success', text }) },
   };
-  for (const name of ['ImportConfirmationInterrupted', 'ImportReview', 'ImportSource', 'ImportFilePending', 'EmptyImportConfirmed', 'State', 'Namespace', 'Revision', 'Selected', 'PersonDraft', 'AccountDraft', 'Confirmation', 'Discard', 'ImportText', 'ImportOpen', 'ExportOpen', 'Copied', 'Query', 'ServiceFilter', 'MergeTarget', 'MergeError', 'MergeErrorPair', 'FormError', 'FormStatus', 'Error', 'CheckingSession', 'ReadFailure', 'Busy']) {
+  for (const name of ['LinkNotice', 'ImportConfirmationInterrupted', 'ImportReview', 'ImportSource', 'ImportFilePending', 'EmptyImportConfirmed', 'State', 'Namespace', 'Revision', 'Selected', 'PersonDraft', 'AccountDraft', 'Confirmation', 'Discard', 'ImportText', 'ImportOpen', 'ExportOpen', 'Copied', 'Query', 'ServiceFilter', 'MergeTarget', 'MergeError', 'MergeErrorPair', 'FormError', 'FormStatus', 'Error', 'CheckingSession', 'ReadFailure', 'Busy']) {
     const key = name[0].toLowerCase() + name.slice(1); c['set' + name] = value => { view[key] = value; c[key] = value; };
   }
   c.readJson = (url, signal) => readJson(url, signal, c.fetch);

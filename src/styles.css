@@ -206,6 +206,9 @@ a { color:#cab4ec; } svg { flex-shrink:0; }
 @media (max-width:800px) { .import-confirmation [data-slot=alert-dialog-action],.import-confirmation [data-slot=alert-dialog-cancel] { min-height:44px; min-width:44px; } }
 .form-error,.error-banner { color:#ffc2c8; background:#492e35; border:1px solid #88606b; border-radius:5px; padding:12px; font-size:.875rem; }
 .error-banner { display:flex; align-items:center; justify-content:space-between; gap:15px; margin:16px 20px; }
+.link-result { display:flex; flex-wrap:wrap; align-items:center; gap:12px; margin:16px 20px; padding:12px; border:1px solid #4f655e; border-radius:5px; background:#25382f; font-size:.875rem; }
+.link-result p { flex:1 1 240px; margin:0; overflow-wrap:anywhere; }
+.link-result-actions { display:flex; flex-wrap:wrap; gap:8px; }
 .spin { animation:spin 1.5s linear infinite; } @keyframes spin { to { transform:rotate(360deg); } }
 @media (max-width:1180px) { .workspace-content { grid-template-columns:260px minmax(0,1fr); } .profile-columns { grid-template-columns:1fr; gap:30px; } .profile-accounts { max-width:600px; } .accounts-grid { grid-template-columns:1fr; } .settings-layout { gap:30px; } }
 @media (max-width:800px) {

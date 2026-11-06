@@ -22,7 +22,7 @@ const compile = node => ts.transpileModule('const callback = (' + node.getText(s
 const bind = (node, context) => new Function(...Object.keys(context), compile(node))(...Object.values(context));
 function harness() {
   const old = { isConnected: true, focused: 0, focus() { this.focused++; } }, next = { isConnected: true, focused: 0, focus() { this.focused++; } };
-  const context = { p: { id: 'synthetic-existing-person' }, profileFocus: { current: null }, identityEpoch: { current: 7 }, sessionPending: { current: false }, personDraft: null, accountDraft: null, setSelected() {}, setMergeTarget() {}, setMergeError() {}, setTab() {} };
+  const context = { p: { id: 'synthetic-existing-person' }, profileFocus: { current: null }, identityEpoch: { current: 7 }, sessionPending: { current: false }, personDraft: null, accountDraft: null, accountReveal: { current: null }, namespaceRef: { current: 'synthetic-owner' }, revealCreatedAccount() {}, setSelected() {}, setMergeTarget() {}, setMergeError() {}, setTab() {} };
   const open = bind(openNode, context), ref = bind(refNode, context), close = bind(closeNode, context);
   const event = { prevented: 0, preventDefault() { this.prevented++; } };
   open({ currentTarget: old });
