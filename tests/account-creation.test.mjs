@@ -142,8 +142,8 @@ for (const key of ['epoch', 'namespace', 'tab', 'owner', 'removed']) test(`revea
   const h = revealHarness();
   if (key === 'epoch') h.context.identityEpoch.current++;
   if (key === 'namespace') h.context.namespaceRef.current = 'other';
-  if (key === 'tab') h.context.tab = 'people';
-  if (key === 'owner') h.context.selected = 'other';
+  if (key === 'tab') { h.context.tab = 'people'; h.context.revealView.current.tab = 'people'; }
+  if (key === 'owner') { h.context.selected = 'other'; h.context.revealView.current.selected = 'other'; }
   if (key === 'removed') { h.context.accountRows.current.clear(); h.context.stateRef.current.data.accounts = []; }
   h.run(); h.flush(); assert.deepEqual(h.calls, []); assert.equal(h.context.accountReveal.current, null);
 });
