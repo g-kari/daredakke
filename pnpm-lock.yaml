@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@animate-ui/react':
-        specifier: 2.0.0
-        version: 2.0.0(motion@14.4.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(radix-ui@1.8.1(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+        specifier: 2.2.1
+        version: 2.2.1(motion@14.4.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(radix-ui@1.8.1(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       class-variance-authority:
         specifier: 0.7.1
         version: 0.7.1
@@ -91,8 +91,8 @@ packages:
     resolution: {integrity: sha512-U4+70Pc5ZS9osnCBCE5Jha/ciHM+Yp+CNMNC/7HvYbNRk1Ldd+f7qO65W5qfhu/TCv+/ozljlXXe9Nj8419DMA==}
     engines: {node: '>=10'}
 
-  '@animate-ui/react@2.0.0':
-    resolution: {integrity: sha512-xwSVXnT+QYtlYBMcrUrRSKWfm039A7OIWsv0jA0po9fdqPScdRSFok8phH8f6Lb7xDWaoiHbqEZhFjV68EFprg==}
+  '@animate-ui/react@2.2.1':
+    resolution: {integrity: sha512-hCY0IvRFhysr4yaCDOkbL0thbsweiQQqfzTXTyAMCZ+0iEUg7xDwDY2yXod5Ij5jfrbG+NarLvbkh3NSGL9m/Q==}
     peerDependencies:
       '@base-ui/react': ^1.8.0
       '@floating-ui/react': ^0.27.20
@@ -2029,7 +2029,7 @@ snapshots:
 
   '@alloc/quick-lru@5.3.0': {}
 
-  '@animate-ui/react@2.0.0(motion@14.4.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(radix-ui@1.8.1(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@animate-ui/react@2.2.1(motion@14.4.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(radix-ui@1.8.1(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       motion: 14.4.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       react: 19.2.6
