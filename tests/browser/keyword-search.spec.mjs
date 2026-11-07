@@ -389,3 +389,118 @@ test('pending session checks reject tool lookup and owner changes clear old resu
   await expect(search(page)).toHaveValue('');
   await expect(page.getByRole('button', { name: '人を追加', exact: true })).toBeDisabled();
 });
+
+const resetUnresolved = page => page.getByRole('button', { name: '絞り込みを解除', exact: true });
+const unresolvedRows = page => page.locator('.workspace-detail .account-row');
+const unresolvedEmpty = page => page.locator('.workspace-detail .empty-state');
+
+test('unresolved empty-filter recovery restores existing rows and search focus without saving', async ({ page }, info) => {
+  const api = await start(page), initialRequests = api.requests.length;
+  await page.getByRole('tab', { name: '未整理' }).click();
+  for (const [query, service] of [['missing fixture', 'すべて'], ['', 'Discord'], ['Nebula', 'VRChat']]) {
+    await search(page).fill(query);
+    await page.getByRole('button', { name: service, exact: true }).click();
+    await expect(unresolvedRows(page)).toHaveCount(0);
+    await expect(unresolvedEmpty(page).getByRole('heading', { name: '一致する未整理アカウントがありません', exact: true })).toBeVisible();
+    await expect(unresolvedEmpty(page).getByRole('button', { name: 'アカウントを追加', exact: true })).toHaveCount(0);
+    await noOverflow(page);
+    await resetUnresolved(page).focus();
+    await page.keyboard.press('Enter');
+    await expect(search(page)).toHaveValue('');
+    await expect(search(page)).toBeFocused();
+    await expect(page.getByRole('button', { name: 'すべて', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('tab', { name: '未整理' })).toHaveAttribute('aria-selected', 'true');
+    await expect(unresolvedRows(page)).toHaveCount(3);
+    await expect(resetUnresolved(page)).toHaveCount(0);
+  }
+  if (info.project.use.isMobile) {
+    await page.setViewportSize({ width: 320, height: 844 });
+    await search(page).fill('missing fixture');
+    await expect(resetUnresolved(page)).toBeVisible();
+    await noOverflow(page);
+    await screenshot(page, info, 'unresolved-filter-empty-320');
+    await resetUnresolved(page).click();
+    await expect(search(page)).toBeFocused();
+    await expect(unresolvedRows(page)).toHaveCount(3);
+  }
+  expect(api.requests).toHaveLength(initialRequests);
+  await noOverflow(page);
+  await screenshot(page, info, 'unresolved-filter-recovered');
+});
+
+test('matching unresolved filters are preserved without a reset offer', async ({ page }) => {
+  const api = await start(page), initialRequests = api.requests.length;
+  await page.getByRole('tab', { name: '未整理' }).click();
+  await search(page).fill('  Nebula   X  ');
+  await page.getByRole('button', { name: 'X', exact: true }).click();
+  await expect(unresolvedRows(page)).toHaveCount(1);
+  await expect(resetUnresolved(page)).toHaveCount(0);
+  await expect(search(page)).toHaveValue('  Nebula   X  ');
+  await expect(page.getByRole('button', { name: 'X', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  expect(api.requests).toHaveLength(initialRequests);
+});
+
+for (const linkedOnly of [false, true]) {
+  test(`true-empty unresolved onboarding stays available with active filters (${linkedOnly ? 'linked only' : 'empty records'})`, async ({ page }) => {
+    const data = linkedOnly ? fixture() : blank();
+    if (linkedOnly) data.accounts = data.accounts.filter(account => account.personId !== null);
+    await start(page, data);
+    await page.getByRole('tab', { name: '未整理' }).click();
+    await search(page).fill('missing fixture');
+    await page.getByRole('button', { name: 'Discord', exact: true }).click();
+    await expect(unresolvedEmpty(page).getByRole('heading', { name: '未整理アカウントはありません', exact: true })).toBeVisible();
+    await expect(resetUnresolved(page)).toHaveCount(0);
+    await unresolvedEmpty(page).getByRole('button', { name: 'アカウントを追加', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'アカウントを追加', exact: true });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('combobox', { name: 'アカウントの紐づけ先', exact: true })).toHaveText('未整理のまま');
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(search(page)).toHaveValue('missing fixture');
+    await expect(page.getByRole('button', { name: 'Discord', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await noOverflow(page);
+  });
+}
+
+test('unresolved recovery does not interrupt a dirty person dialog or discard confirmation', async ({ page }) => {
+  const api = await start(page), initialRequests = api.requests.length;
+  await page.getByRole('tab', { name: '未整理' }).click();
+  await search(page).fill('missing fixture');
+  await page.getByRole('button', { name: '人を追加', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '人を追加', exact: true });
+  await dialog.getByRole('textbox', { name: '名前 必須', exact: true }).fill('未保存の架空名');
+  await expect(resetUnresolved(page)).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  const discard = page.getByRole('alertdialog', { name: '保存していない入力を破棄しますか？', exact: true });
+  await expect(discard).toBeVisible();
+  await expect(resetUnresolved(page)).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(discard).toHaveCount(0);
+  await expect(dialog.getByRole('textbox', { name: '名前 必須', exact: true })).toHaveValue('未保存の架空名');
+  await expect(page.locator('input[aria-label="記録を検索"]')).toHaveValue('missing fixture');
+  expect(api.requests).toHaveLength(initialRequests);
+});
+
+for (const changedOwner of [false, true]) {
+  test(`session verification hides unresolved recovery and ${changedOwner ? 'invalidates old records' : 'keeps filters until explicit recovery'}`, async ({ page }) => {
+    const api = await start(page);
+    await page.getByRole('tab', { name: '未整理' }).click();
+    await search(page).fill('missing fixture');
+    const release = api.pauseNextSession();
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await expect(page.getByText('ログインを確認しています…', { exact: true })).toBeVisible();
+    await expect(resetUnresolved(page)).toHaveCount(0);
+    if (changedOwner) api.namespace = namespaceB;
+    release();
+    if (changedOwner) {
+      await expect(page.getByRole('alert')).toContainText('ログインを確認できません');
+      await expect(unresolvedRows(page)).toHaveCount(0);
+      await expect(resetUnresolved(page)).toHaveCount(0);
+    } else {
+      await expect(search(page)).toHaveValue('missing fixture');
+      await resetUnresolved(page).click();
+      await expect(search(page)).toBeFocused();
+      await expect(unresolvedRows(page)).toHaveCount(3);
+    }
+  });
+}
