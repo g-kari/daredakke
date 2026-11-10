@@ -21,7 +21,7 @@
     "test:browser": "playwright test --config tests/browser/playwright.config.mjs"
   },
   "dependencies": {
-    "@animate-ui/react": "2.3.0",
+    "@animate-ui/react": "2.4.1",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "jose": "^6.0.0",
