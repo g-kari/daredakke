@@ -5,7 +5,7 @@
   "type": "module",
   "engines": {
     "node": ">=22.13.0",
-    "pnpm": "12.16.1"
+    "pnpm": "12.17.0"
   },
   "scripts": {
     "build": "vite build",
@@ -49,5 +49,5 @@
     "vite": "8.3.5",
     "wrangler": "^4.149.0"
   },
-  "packageManager": "pnpm@12.16.1"
+  "packageManager": "pnpm@12.17.0"
 }
