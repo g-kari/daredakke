@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import ts from 'typescript';
+import ts from '@typescript/typescript6';
 import { personDraftChanged, accountDraftChanged } from '../src/lib/drafts.ts';
 
 // Execute actual component callbacks with synthetic inputs. Rendered keyboard/focus
@@ -16,7 +16,9 @@ function visit(node) {
 visit(source);
 function callback(node, context, name) {
   assert.ok(node, 'component callback exists');
-  const code = ts.transpileModule(node.getText(source), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText.trim();
+  // TS 6 transpileModule prepends a "use strict"; directive, which would
+  // terminate the expression built below; strip it before wrapping.
+  const code = ts.transpileModule(node.getText(source), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText.trim().replace(/^"use strict";\s*/, '');
   return new Function(...Object.keys(context), name ? code + '\nreturn ' + name + ';' : 'return ' + code.replace(/;$/, '') + ';')(...Object.values(context));
 }
 function harness() {

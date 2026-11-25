@@ -7,6 +7,9 @@ import { createHash } from 'node:crypto';
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const options = { sourceRoot: path.resolve(directory, '..'), depsRoot: path.resolve(directory, '../node_modules'), expectation: 'fixed' };
 const tsCandidates = [
+  // TypeScript 7 ships no classic compiler API / lib/typescript.js; the
+  // tests use the official @typescript/typescript6 compatibility package.
+  path.join(options.depsRoot, '@typescript/typescript6/lib/typescript.js'),
   path.join(options.depsRoot, 'typescript/lib/typescript.js'),
   path.join(options.depsRoot, 'node_modules/typescript/lib/typescript.js'),
 ];
