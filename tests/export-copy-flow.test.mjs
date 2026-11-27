@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import ts from 'typescript';
+import ts from '@typescript/typescript6';
 // Actual component callbacks with synthetic clipboard promises, not browser coverage.
 const source=ts.createSourceFile('app.tsx',fs.readFileSync(new URL('../src/app.tsx',import.meta.url),'utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
 const functions=new Map();

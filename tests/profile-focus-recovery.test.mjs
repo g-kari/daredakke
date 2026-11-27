@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createHash } from 'node:crypto';
-import ts from 'typescript';
+import ts from '@typescript/typescript6';
 const sourcePath = new URL('../src/app.tsx', import.meta.url);
 const raw = fs.readFileSync(sourcePath, 'utf8');
 const source = ts.createSourceFile('app.tsx', raw, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);

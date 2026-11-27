@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import ts from 'typescript';
+import ts from '@typescript/typescript6';
 import { demoData, empty, exportData, parseImport } from '../src/domain/records.ts';
 import { buildImportReview } from '../src/domain/import-review.ts';
 import { readSessionFile } from '../src/lib/session.ts';
