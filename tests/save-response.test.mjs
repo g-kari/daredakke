@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import ts from 'typescript';
+import ts from '@typescript/typescript6';
 import { identityChanged, readNamespace, sessionChecks } from '../src/lib/session.ts';
 import { readJson, ReadTimeoutError } from '../src/lib/reads.ts';
 import { demoData, change } from '../src/domain/records.ts';

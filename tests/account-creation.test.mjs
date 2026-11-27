@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import ts from 'typescript';
+import ts from '@typescript/typescript6';
 import { normalizeAccount, change, demoData } from '../src/domain/records.ts';
 import { createRecordSearch, searchPeople } from '../src/domain/search.ts';
 
